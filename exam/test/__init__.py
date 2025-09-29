@@ -82,5 +82,5 @@ class TestGenerator:
         for question_id, value in solution.items():
             if value != 0:
                 questions.append(self.__db.question(question_id))
-        return QuestionsStore(questions)
+        return solution
     

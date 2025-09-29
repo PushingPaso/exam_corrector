@@ -1,6 +1,5 @@
-from langchain_community.embeddings.openai import OpenAIEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import SQLiteVec
-from exam.openai import ensure_openai_api_key
 from exam import DIR_ROOT
 from pydantic import BaseModel
 import re
@@ -58,27 +57,67 @@ def all_slides(files = None):
             )
 
 
-def openai_embeddings(model):
-    ensure_openai_api_key()
-    model = model.lower() if model else "small"
-    # https://platform.openai.com/docs/models/
-    if "small" in model:
-        model = "text-embedding-3-small"
-    elif "large" in model:
-        model = "text-embedding-3-large"
-    elif "old" in model or "ada" in model:
-        model = "text-embedding-ada-002"
+def huggingface_embeddings(model=None):
+    """
+    Creates HuggingFace embeddings model.
+    
+    Args:
+        model: Model identifier or size hint (small/large/multilingual)
+               Default: sentence-transformers/all-MiniLM-L6-v2
+    
+    Returns:
+        HuggingFaceEmbeddings instance
+    """
+    if not model:
+        model = "small"
+    
+    model = model.lower()
+    
+    # Map model hints to actual HuggingFace model names
+    if model == "small" or "mini" in model:
+        # Fast, lightweight model - good for most use cases
+        model_name = "sentence-transformers/all-MiniLM-L6-v2"
+    elif model == "large" or "mpnet" in model:
+        # More accurate but slower
+        model_name = "sentence-transformers/all-mpnet-base-v2"
+    elif model == "multilingual" or "multi" in model:
+        # Multilingual support (English + Italian)
+        model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    elif model.startswith("sentence-transformers/") or "/" in model:
+        # Direct model name provided
+        model_name = model
     else:
-        raise ValueError(f"Unknown OpenAI model: {model}. "
-                         "Please use 'small', 'large', or 'old'/'ada' variants.")
-    return OpenAIEmbeddings(model=model)
+        raise ValueError(
+            f"Unknown model hint: {model}. "
+            "Use 'small', 'large', 'multilingual', or a full HuggingFace model name."
+        )
+    
+    print(f"# Loading embeddings model: {model_name}")
+    
+    return HuggingFaceEmbeddings(
+        model_name=model_name,
+        model_kwargs={'device': 'cpu'},  # Use 'cuda' if GPU available
+        encode_kwargs={'normalize_embeddings': True}  # For better similarity search
+    )
 
 
 def sqlite_vector_store(
         db_file: str = str(FILE_DB), 
         model: str = None, 
         table_name: str = "se_slides"):
-    embeddings = openai_embeddings(model)
+    """
+    Creates or loads a SQLite vector store with HuggingFace embeddings.
+    
+    Args:
+        db_file: Path to SQLite database file
+        model: Embedding model hint or name
+        table_name: Name of the table in the database
+    
+    Returns:
+        SQLiteVec instance
+    """
+    embeddings = huggingface_embeddings(model)
+    
     return SQLiteVec(
         db_file=db_file,
         embedding=embeddings,

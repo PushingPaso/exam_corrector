@@ -156,12 +156,13 @@ class TestAssessment:
             for question, answer in question_answers.items():
                 if per_question is None:
                     print(f"  Question: {question.text}", file=file)
-                print(f"  Answer:\n\t{answer.answer.replace('\n', '\n\t')}", file=file)
+                formatted_answer = answer.answer.replace('\n', '\n\t')
+                print(f"  Answer:\n\t{formatted_answer}", file=file)
                 print("  Assessments:", file=file)
                 for feature, assessment in answer.assessment.items():
                     print(f"    - [{'ok' if assessment.satisfied else 'KO'}] {feature.type.name}: {feature.description}", file=file)
-                    print(f"        * {assessment.motivation.replace('\n', '\n          ')}", file=file)
-
+                    formatted_motivation = assessment.motivation.replace('\n', '\n          ')
+                    print(f"        * {formatted_motivation}", file=file)
 
 def first(iterable):
     """Return the first item of an iterable or None if it's empty."""
