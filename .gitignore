@@ -136,6 +136,9 @@ celerybeat.pid
 
 # Environments
 .env
+mock_exam_submissions/
+CLAUDE.md
+solutions/
 .envrc
 .venv
 env/

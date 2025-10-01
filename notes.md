@@ -1,195 +1,298 @@
-# Introduction to the course
+# Guida alla Configurazione del Sistema di Correzione Automatica
 
-- Goal: understand phases, their motivation, their utility, and their cost
+## Modifiche Principali
 
-- Didactic material
+Il sistema è stato aggiornato per utilizzare:
+- **Mistral-7B-Instruct** tramite OpenRouter invece di OpenAI
+- **HuggingFace Embeddings** (sentence-transformers) invece di OpenAI Embeddings
 
-# Introduction to SE
+## Installazione
 
-1. What is software
-0. Computer science vs. software engineering
-    - Goal of CS: studying algorithms
-    - Goal of SE: producing working software products
-0. What is software
-0. Working SW = meeting the requirements
-0. Focus on the process = making the process sustainable / maintainable
-0. What sustainable means
-0. What maintainable means 
-0. Software crises
-0. CMM levels
-0. Overview on workflow phases
-    1. Requirement gathering
-    2. Requirement analisis
-    3. Design
-        a. Modelling
-        b. Architecture
-    4. Implementation
-        c. design patterns
-    5. Testing
-    6. Deployment
-    7. Release
-    8. Maintenance
-0. The role of methodologies
+### 1. Installare le dipendenze
 
-# Preleminaries
+```bash
+pip install -r requirements.txt
+```
 
-Anatomy of a Python project
+**Nota Importante**: 
+- L'installazione di `torch` e `sentence-transformers` può richiedere alcuni minuti
+- Il primo download del modello embeddings richiederà ~100-500MB
+- Assicurati di avere almeno 2GB di spazio libero su disco
 
-Running example: the calculator
+### 2. Verificare l'installazione
 
-## Code and code organization
+```bash
+python test_setup.py
+```
 
-> Example of a Python script showing a calculator app
+Questo script verificherà che tutto sia installato correttamente.
 
-## Running the code via the Python interpreter
+### 3. Configurare OpenRouter API Key
 
-Interpreted vs. Compiled
+Ottieni una chiave API gratuita da [OpenRouter](https://openrouter.ai/keys):
 
-Python caches
+**Su Linux/Mac:**
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
+```
 
-Differences among versions of the runtime (lunch the project with different interpreters)
+**Su Windows (PowerShell):**
+```powershell
+$env:OPENROUTER_API_KEY="sk-or-v1-your-key-here"
+```
 
-## The runtime environment
+**Su Windows (CMD):**
+```cmd
+set OPENROUTER_API_KEY=sk-or-v1-your-key-here
+```
 
-The notion of dependencies
+Oppure crea un file `.env` nella root del progetto:
+```
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+```
 
-Where are dependencies taken from?
+Il sistema ti chiederà la chiave all'avvio se non è configurata.
 
-How to automatically restore dependencies?
+## Utilizzo
 
-## Model - View - Controller
+### 1. Creare il Vector Store (RAG)
 
-The script presented so far can only serve one particular purpose (desktop GUI)
+Prima di tutto, popola il database vettoriale con le slide del corso:
 
-The day requirements change, the script will have to be rewritten from scratch
+```bash
+python -m exam.rag --fill
+```
 
-Core idea: minimize the effort to be spent on handling requirements changes
+Questo processo:
+- Legge tutti i file `_index.md` dalla cartella `content/`
+- Divide il contenuto in slide
+- Genera embeddings usando sentence-transformers
+- Salva tutto in `slides-rag.db`
 
-In practice, we need to split the code into three parts:
-- Model: the logic of the application
-- View: the way the application is presented to the user
-- Controller: the junction among the two
+**Tempo stimato**: 5-15 minuti (dipende dal numero di slide)
 
-> Example of the same application, but with a different organization
+### 2. Testare il RAG
 
-### Brief intuition about modelling
+Verifica che il RAG funzioni correttamente:
 
-- Represeting input/output data structures
+```bash
+python -m exam.rag
+```
 
-- Representing processing logic
+Ti permetterà di fare query interattive contro il vector store.
 
-### Different views
+### 3. Generare le Checklist per le Domande
 
-- Desktop GUI
-- Command-line GUI
-- Web GUI
-- Mobile GUI
+Genera le checklist di valutazione per tutte le domande:
 
-## The notion of interface
+```bash
+python -m exam.solution
+```
 
-Any piece of software can be seen as a black box, exposing an interface towards its users
+Oppure per domande specifiche:
 
-Which kind of users?
-- other pieces of software
-- human users (as mediated by some input/output device)
+```bash
+python -m exam.solution SE-1 SE-2
+```
 
-## Many sorts of software artifacts
+Le checklist vengono salvate in `solutions/` come file YAML.
 
-- Libraries (used by other pieces of software)
-- Command-line tools (used by human users or other pieces of software)
-- Graphical user interfaces (used by human users via screen, keyboard, mouse, touchpad, etc.)
-- Web applications (used by human users via web browsers)
+### 4. Valutare le Risposte degli Studenti
 
-## Component view
+Struttura attesa per le risposte:
 
-To minimize effort on the long run, and maximise reuse, a software project commonly consisting of several components:
+```
+exam_submissions/
+├── Q01 - SE-1/
+│   ├── 12345 - Mario Rossi/
+│   │   └── Attempt_1_textresponse
+│   └── 67890 - Luigi Bianchi/
+│       └── Attempt_1_textresponse
+└── Q02 - SE-2/
+    └── ...
+```
 
-Each component is a software artifact, with a clear purpose and interface, and its own development lifecycle
+Esegui la valutazione:
 
-The system is attained by composing the components together
+```bash
+python -m exam.assess /path/to/exam_submissions
+```
 
-Design is essentially about deciding which and how many components to have, 
-how each component should work, and how they should interact with each other
+Oppure salvando l'output in un file:
 
-## Other advantages of components
+```bash
+OUTPUT_FILE=assessment_results.txt python -m exam.assess /path/to/exam_submissions
+```
 
-- Division of labor
+## Modelli Disponibili
 
-- Divide et impera approach to handle complexity
+### LLM (via OpenRouter)
 
-- Fine grained testability
+Il sistema usa di default `mistralai/mistral-7b-instruct`, ma puoi specificare altri modelli:
 
-### Testing
+```python
+from exam.openai import AIOracle
 
-Core idea of automated testing: write code that checks the correctness of other code
+# Mistral 7B (default, gratuito)
+oracle = AIOracle("mistralai/mistral-7b-instruct")
 
-Goals:
-- ensure that the code works as expected
-- ensure that the code keeps working as expected (after change)
+# Altri modelli Mistral
+oracle = AIOracle("mistralai/mixtral-8x7b-instruct")
 
+# Modelli alternativi
+oracle = AIOracle("meta-llama/llama-3-8b-instruct")
+oracle = AIOracle("google/gemini-pro")
+```
 
-## Deployment, packaging, and release
+### Embeddings (HuggingFace)
 
-- Deployment: the process of making the software available to the users
-    + may require further coding, e.g. to automate the installation process
+Tre opzioni preconfigurate:
 
-- Packaging: the process of creating a distributable artifact (e.g. self-contained installer, or a package for a package manager)
-    + may require further coding, e.g. to automate the packaging process
+```python
+from exam.rag import sqlite_vector_store
 
-- Release: the process of making a version package publicly available
-    + this may imply the availability of some web portal where packages are published
-        * several versions of the same package may coexist on the portal
-    + may require further coding, e.g. to automate the upload process
+# Small - veloce, leggero (default)
+store = sqlite_vector_store(model="small")
 
-### Versioning
+# Large - più accurato ma più lento
+store = sqlite_vector_store(model="large")
 
-- The process of assigning a unique identifier to each release
-- The identifier is used to refer to the release in the future
-- In this way several variants of the same software can coexist
-- Users may want to have access to previous versions of the software for several reasons
+# Multilingual - supporto multilingua (EN + IT)
+store = sqlite_vector_store(model="multilingual")
+```
 
-## Maintenance
+## Workflow Completo
 
-Let's assume that the software development is over.
-The result is bug-free, and meets all the requirements.
-The users are happy, and the software is widely used.
-The requirements are not going to change, and the software is not going to be extended.
+```bash
+# 1. Setup iniziale (una volta sola)
+export OPENROUTER_API_KEY="your-key"
+pip install -r requirements.txt
 
-Is it ok to not change the source code anymore?
+# 2. Popola il RAG con le slide
+python -m exam.rag --fill
 
-No, it is not.
+# 3. Genera le checklist delle domande
+python -m exam.solution
 
-The runtime may still change, without developers being in control of that.
-- e.g. novel version of Python will be released, until the current one is eventually too old
-- e.g. novel version of the operating system will be released, until the current one is eventually too old
-- etc.
+# 4. Valuta le risposte degli studenti
+python -m exam.assess ./exam_submissions
 
-Maintenance work is required just to keep the software alive.
+# 5. (Opzionale) Genera varianti del test
+python -m exam.test -w 9 -c 1 2 3
+```
 
-Also consider that it's very unlikely that the software is bug-free, 
-and that requirements never change.
+## Struttura dei File Generati
 
-## Cooperation among developers
+### Checklist (solutions/*.yaml)
 
-- Code is meant to be read by humans, not computers
+```yaml
+id: SE-1
+question: "Descrivi il pattern MVC..."
+model_name: mistralai/mistral-7b-instruct
+should:
+  - "Menziona Model, View, Controller"
+  - "Spiega la separazione delle responsabilità"
+should_not:
+  - "Confonde MVC con MVVM"
+examples:
+  - "Framework come Django o Spring MVC"
+see_also:
+  - "Vantaggi della separazione UI/logica"
+```
 
-- Importance of keeping the code understandable
-    * documentation
-    * coding style
-    * code review
-    * linting
-    * conventions
-    * project structure
+### Valutazioni (cache in submission folders)
 
-- Importance of automating all aspects of the development process
-    * testing
-    * deployment
-    * packaging
-    * release
-    * maintenance
+```yaml
+feature: "Menziona Model, View, Controller"
+feature_type: SHOULD
+satisfied: true
+motivation: "Hai correttamente identificato i tre componenti principali del pattern MVC."
+```
 
-- Importance of (distributed) version control tools
-    * to keep track of changes
-    * to allow for parallel development
-    * to allow for reverting changes
-    * to allow for branching and merging
+## Troubleshooting
+
+### Errore: "Module not found"
+
+```bash
+pip install -r requirements.txt --upgrade
+```
+
+### Embeddings troppo lenti
+
+Usa il modello "small" o abilita GPU:
+
+```python
+# In exam/rag/__init__.py, modifica:
+model_kwargs={'device': 'cuda'}  # invece di 'cpu'
+```
+
+### OpenRouter rate limiting
+
+OpenRouter ha limiti gratuiti. Se necessario, considera:
+- Aumentare il delay tra richieste
+- Usare un piano a pagamento
+- Implementare caching più aggressivo
+
+### Il RAG non trova contenuti rilevanti
+
+Verifica che:
+1. Le slide siano in formato corretto
+2. Il delimitatore `---` o `+++` sia presente
+3. Il contenuto sia in `content/**/_index.md`
+
+```bash
+# Debug: stampa le slide trovate
+python -c "from exam.rag import all_slides; print(len(list(all_slides())))"
+```
+
+## Performance
+
+### Tempi Stimati
+
+- **RAG population**: 5-15 min (dipende da # slide)
+- **Generazione checklist**: 30-60s per domanda
+- **Valutazione risposta**: 10-30s per feature
+
+### Ottimizzazioni
+
+1. **Cache**: Tutte le operazioni LLM usano cache YAML
+2. **Batch processing**: Le valutazioni sono elaborate sequenzialmente
+3. **Embeddings locali**: Nessun costo API per il RAG
+
+## Sicurezza
+
+- Non committare mai `OPENROUTER_API_KEY` nel repository
+- Usa `.env` file o variabili d'ambiente
+- Le chiavi API sono richieste interattivamente se mancanti
+
+## Limitazioni Attuali
+
+1. **No browser storage**: Il sistema non usa localStorage/sessionStorage
+2. **Single-threaded**: Le valutazioni sono sequenziali
+3. **No GPU optimization**: Di default usa CPU per embeddings
+4. **Italiano**: Ottimizzato per contenuti in italiano/inglese
+
+## Prossimi Sviluppi (Agentic AI)
+
+Per implementare il sistema agentico completo:
+
+1. **Agent 1 - Checklist Generator**
+   - Input: Domanda + RAG context
+   - Output: Checklist strutturata
+   - Tool: RAG search
+
+2. **Agent 2 - Answer Assessor**
+   - Input: Risposta studente + Checklist
+   - Output: Valutazione + Feedback
+   - Tool: Feature verification
+
+3. **Tools Aggiuntivi**
+   - Database reader (Excel/CSV)
+   - Feedback generator
+   - Score calculator
+   - MCP gateway per integrazioni esterne
+
+4. **Orchestration**
+   - LangGraph per workflow multi-agent
+   - State management
+   - Error handling e retry logic

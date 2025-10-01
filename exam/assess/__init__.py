@@ -73,24 +73,43 @@ class Feature:
         if self.type != FeatureType.SHOULDNT:
             return "is actually present"
         return "is actually absent"
+    
+    @property
+    def is_critical(self) -> bool:
+        """Determina se questa feature è critica e deve sempre essere mostrata."""
+        return self.type in (FeatureType.SHOULD, FeatureType.SHOULDNT)
 
 
-def enumerate_features(answer: Answer):
+def enumerate_features(answer: Answer, only_critical: bool = False):
+    """
+    Enumera le features da valutare.
+    
+    Args:
+        answer: Answer object con le features
+        only_critical: Se True, enumera solo SHOULD e SHOULDNT (ignora EXAMPLE e SEE_ALSO)
+    """
     if not answer:
         return
     i = 0
+    
+    # SHOULD - sempre incluse
     for should in answer.should:
         yield i, Feature(type=FeatureType.SHOULD, description=should)
         i += 1
+    
+    # SHOULDNT - sempre incluse
     for shouldnt in answer.should_not:
         yield i, Feature(type=FeatureType.SHOULDNT, description=shouldnt)
         i += 1
-    for example in answer.examples:
-        yield i, Feature(type=FeatureType.EXAMPLE, description=example)
-        i += 1
-    for see_also in answer.see_also:
-        yield i, Feature(type=FeatureType.SEE_ALSO, description=see_also)
-        i += 1
+    
+    # EXAMPLE e SEE_ALSO - solo se richiesto
+    if not only_critical:
+        for example in answer.examples:
+            yield i, Feature(type=FeatureType.EXAMPLE, description=example)
+            i += 1
+        for see_also in answer.see_also:
+            yield i, Feature(type=FeatureType.SEE_ALSO, description=see_also)
+            i += 1
 
 
 class FeatureAssessment(BaseModel):
@@ -104,6 +123,52 @@ class AnswerAssessment:
     answer: str
     # A dictionary mapping each feature to its assessment.
     assessment: dict[Feature, FeatureAssessment] = field(default_factory=dict)
+    
+    def calculate_score(self, max_score: float) -> tuple[float, str]:
+        """
+        Calcola il punteggio della risposta.
+        
+        Args:
+            max_score: Punteggio massimo della domanda
+            
+        Returns:
+            tuple(score, breakdown): Punteggio ottenuto e spiegazione del calcolo
+        """
+        if not self.assessment:
+            return 0.0, "No features assessed"
+        
+        # Conta feature per tipo
+        should_total = sum(1 for f in self.assessment if f.type == FeatureType.SHOULD)
+        should_satisfied = sum(1 for f, a in self.assessment.items() 
+                              if f.type == FeatureType.SHOULD and a.satisfied)
+        
+        shouldnt_total = sum(1 for f in self.assessment if f.type == FeatureType.SHOULDNT)
+        shouldnt_violated = sum(1 for f, a in self.assessment.items() 
+                               if f.type == FeatureType.SHOULDNT and not a.satisfied)
+        
+        if should_total == 0:
+            return 0.0, "No SHOULD features defined"
+        
+        # Calcolo base: percentuale di SHOULD soddisfatti
+        base_percentage = should_satisfied / should_total
+        
+        # Penalità per errori (SHOULDNT violati)
+        penalty_per_error = 0.15  # 15% di penalità per errore
+        error_penalty = shouldnt_violated * penalty_per_error
+        
+        # Percentuale finale
+        final_percentage = max(0.0, base_percentage - error_penalty)
+        
+        # Score finale
+        score = round(final_percentage * max_score, 2)
+        
+        # Breakdown
+        breakdown = f"Base: {should_satisfied}/{should_total} SHOULD ({base_percentage*100:.0f}%)"
+        if shouldnt_violated > 0:
+            breakdown += f" - Errors: {shouldnt_violated}/{shouldnt_total} mistakes (-{error_penalty*100:.0f}%)"
+        breakdown += f" = {final_percentage*100:.0f}% of {max_score} = {score}"
+        
+        return score, breakdown
 
 
 @dataclass
@@ -114,6 +179,14 @@ class StudentAssessment:
     code: str
     # A dictionary mapping each question to its answer and assessments.
     answers: dict[Question, AnswerAssessment] = field(default_factory=dict)
+    
+    def total_score(self) -> float:
+        """Calcola il punteggio totale dello studente."""
+        total = 0.0
+        for question, answer_assessment in self.answers.items():
+            score, _ = answer_assessment.calculate_score(question.weight)
+            total += score
+        return round(total, 2)
 
 
 class TestAssessment:
@@ -142,27 +215,79 @@ class TestAssessment:
     def assessments(self) -> list[StudentAssessment]:
         return list(self.__students_by_name.values())
 
-    def pretty_print(self, per_question: Question = None, file=OUTPUT_FILE):
+    def pretty_print(self, per_question: Question = None, file=OUTPUT_FILE, show_only_unsatisfied: bool = True):
+        """
+        Stampa le valutazioni in formato leggibile.
+        
+        Args:
+            per_question: Se specificato, mostra solo questa domanda
+            file: File dove scrivere l'output
+            show_only_unsatisfied: Se True, mostra solo le feature non soddisfatte (default)
+        """
         if per_question is not None:
             print(f"Assessments for question {per_question.id}: {per_question.text}", file=file)
+        
         for index, name in enumerate(sorted(self.__students_by_name)):
             if index > 0 or per_question is not None:
                 print("---", file=file)
+            
             student = self.__students_by_name[name]
             print(f"Student: {student.name} ({student.code})", file=file)
+            
             question_answers = student.answers
             if per_question is not None:
                 question_answers = {per_question: question_answers[per_question]}
+            
             for question, answer in question_answers.items():
                 if per_question is None:
                     print(f"  Question: {question.text}", file=file)
-                formatted_answer = answer.answer.replace('\n', '\n\t')
-                print(f"  Answer:\n\t{formatted_answer}", file=file)
-                print("  Assessments:", file=file)
+                
+                # Mostra preview risposta
+                answer_preview = answer.answer[:200]
+                if len(answer.answer) > 200:
+                    answer_preview += "..."
+                print(f"  Answer:\n\t{answer_preview.replace(chr(10), chr(10) + chr(9))}", file=file)
+                
+                # Filtra le features da mostrare
+                features_to_show = []
                 for feature, assessment in answer.assessment.items():
-                    print(f"    - [{'ok' if assessment.satisfied else 'KO'}] {feature.type.name}: {feature.description}", file=file)
-                    formatted_motivation = assessment.motivation.replace('\n', '\n          ')
-                    print(f"        * {formatted_motivation}", file=file)
+                    # Mostra solo SHOULD e SHOULDNT
+                    if feature.is_critical:
+                        # Se show_only_unsatisfied, mostra solo quelle non soddisfatte
+                        if show_only_unsatisfied:
+                            # Per SHOULD: mostra se NOT satisfied (mancante)
+                            # Per SHOULDNT: mostra se NOT satisfied (errore presente)
+                            if not assessment.satisfied:
+                                features_to_show.append((feature, assessment))
+                        else:
+                            # Mostra tutto
+                            features_to_show.append((feature, assessment))
+                
+                if features_to_show:
+                    print("  Issues Found:", file=file)
+                    for feature, assessment in features_to_show:
+                        if feature.type == FeatureType.SHOULD:
+                            print(f"    ✗ Missing: {feature.description}", file=file)
+                        else:  # SHOULDNT
+                            print(f"    ✗ Error: {feature.description}", file=file)
+                        print(f"        → {assessment.motivation.replace(chr(10), chr(10) + '        → ')}", file=file)
+                else:
+                    if show_only_unsatisfied:
+                        print("  ✓ All critical requirements satisfied!", file=file)
+                    else:
+                        print("  ✓ No issues found", file=file)
+                
+                # Calcola e mostra punteggio
+                score, breakdown = answer.calculate_score(question.weight)
+                print(f"  Score: {score}/{question.weight}", file=file)
+                print(f"  Calculation: {breakdown}", file=file)
+            
+            # Mostra punteggio totale se più domande
+            if len(student.answers) > 1:
+                total = student.total_score()
+                max_total = sum(q.weight for q in student.answers.keys())
+                print(f"\n  Total Score: {total}/{max_total}", file=file)
+
 
 def first(iterable):
     """Return the first item of an iterable or None if it's empty."""
@@ -170,11 +295,23 @@ def first(iterable):
 
 
 class Assessor(AIOracle):
-    def __init__(self, exam_dir_by_questions: Path, model_name: str = None, model_provider: str = None):
+    def __init__(self, exam_dir_by_questions: Path, model_name: str = None, model_provider: str = None, 
+                 only_critical_features: bool = True):
+        """
+        Inizializza l'assessor.
+        
+        Args:
+            exam_dir_by_questions: Directory contenente le risposte degli studenti
+            model_name: Nome del modello LLM da usare
+            model_provider: Provider del modello
+            only_critical_features: Se True, valuta solo SHOULD e SHOULDNT
+        """
         super().__init__(model_name, model_provider, FeatureAssessment)
         self.__root = Path(exam_dir_by_questions)
         self.__exam: QuestionsStore = _load_exam(exam_dir_by_questions)
         self.__answers: dict[str, Answer] = {}
+        self.__only_critical = only_critical_features
+        
         for question in self.__exam.questions:
             if (cached_answer := load_answer(question)):
                 self.__answers[question.id] = cached_answer
@@ -221,7 +358,6 @@ class Assessor(AIOracle):
                 print(f"# error loading cached assessment from {cache_file}: {e}")
                 cache_file.unlink()
 
-
     def __assess_feature(self, question: Question, feature: Feature, answer: str, dir: Path, index: int) -> FeatureAssessment:
         cached_assessment = self.__load_cache(dir, feature, index)
         if cached_assessment:
@@ -242,12 +378,29 @@ class Assessor(AIOracle):
         self.__save_cache(dir, feature, result, index)
         return result
 
-    def assess_all(self):
+    def assess_all(self, show_only_unsatisfied: bool = True):
+        """
+        Valuta tutte le risposte.
+        
+        Args:
+            show_only_unsatisfied: Se True, mostra solo problemi (default).
+                                  Se False, mostra tutte le valutazioni.
+        """
         assessments = TestAssessment()
+        
         def log(q):
-            assessments.pretty_print(per_question=q, file=OUTPUT_FILE)
+            assessments.pretty_print(per_question=q, file=OUTPUT_FILE, show_only_unsatisfied=show_only_unsatisfied)
+        
+        total_features = 0
+        evaluated_features = 0
+        
         for code, name, question, target, answer, dir in self.__iterate_over_answers(on_question_over=log):
-            for index, feature in enumerate_features(target):
+            for index, feature in enumerate_features(target, only_critical=self.__only_critical):
+                total_features += 1
                 assessment = self.__assess_feature(question, feature, answer, dir, index)
                 assessments.add_assessment(code, name, question, answer, feature, assessment)
+                evaluated_features += 1
+        
+        print(f"\n# Total features evaluated: {evaluated_features}", file=OUTPUT_FILE)
+        
         return assessments
