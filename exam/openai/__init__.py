@@ -26,7 +26,7 @@ def llm_client(model_name: str = None, model_provider: str = None, structured_ou
         Tuple of (llm_instance, model_name, model_provider)
     """
     if not model_name:
-        model_name = "mistralai/mistral-7b-instruct"
+        model_name = "qwen/qwen3-coder:free"
     
     # For compatibility, default provider to "openrouter"
     if not model_provider:

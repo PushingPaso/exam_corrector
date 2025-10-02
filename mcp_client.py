@@ -24,7 +24,7 @@ class MCPClientDemo:
         """Initialize the demo client."""
         self.mcp_server = ExamMCPServer(exam_dir)
         self.llm = ChatOpenAI(
-            model="mistralai/mistral-7b-instruct",
+            model="qwen/qwen3-coder:free",
             openai_api_key=os.environ.get("OPENROUTER_API_KEY"),
             openai_api_base="https://openrouter.ai/api/v1",
             temperature=0.1,

@@ -39,7 +39,7 @@ async def demo_simple_workflow():
     print(f"✓ Found {len(questions)} questions")
     
     # Pick first question
-    question = questions[0]
+    question = questions[383]
     question_id = question["id"]
     question_text = question["text"]
     max_score = question["weight"]
