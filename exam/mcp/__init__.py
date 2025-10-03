@@ -28,10 +28,29 @@ class ExamMCPServer:
         self.questions_store = QuestionsStore()
         self.vector_store = None
         
-        # Try to initialize vector store (optional)
+        # Try to initialize vector store only if it has content
         try:
-            self.vector_store = sqlite_vector_store()
-            print("# MCP Server: RAG vector store loaded")
+            from exam import DIR_ROOT
+            db_file = DIR_ROOT / "slides-rag.db"
+            
+            # Check if database exists and has content
+            if db_file.exists() and db_file.stat().st_size > 0:
+                vs = sqlite_vector_store()
+                
+                # Try to check if it has data by getting dimensionality
+                try:
+                    dim = vs.get_dimensionality()
+                    if dim > 0:
+                        self.vector_store = vs
+                        print(f"# MCP Server: RAG vector store loaded ({dim} dimensions)")
+                    else:
+                        print("# MCP Server: RAG database exists but is empty (skipped)")
+                except:
+                    # If we can't get dimensionality, assume it's usable
+                    self.vector_store = vs
+                    print("# MCP Server: RAG vector store loaded")
+            else:
+                print("# MCP Server: RAG database not found or empty (skipped)")
         except Exception as e:
             print(f"# MCP Server: RAG not available: {e}")
         
@@ -42,6 +61,22 @@ class ExamMCPServer:
         """Create all available tools as a dictionary."""
         
         tools = {}
+        
+        # Wrapper to add error logging to all tools
+        def tool_wrapper(tool_name, tool_func):
+            async def wrapped(*args, **kwargs):
+                try:
+                    print(f"\n[TOOL] {tool_name} called with args={args}, kwargs={kwargs}")
+                    result = await tool_func(*args, **kwargs)
+                    print(f"[TOOL] {tool_name} returned: {result[:200] if len(result) > 200 else result}...")
+                    return result
+                except Exception as e:
+                    error_msg = f"[TOOL ERROR] {tool_name} failed: {type(e).__name__}: {str(e)}"
+                    print(error_msg)
+                    import traceback
+                    traceback.print_exc()
+                    return json.dumps({"error": f"{type(e).__name__}: {str(e)}", "tool": tool_name})
+            return wrapped
         
         # Tool 1: list_questions
         async def list_questions() -> str:
@@ -72,6 +107,7 @@ class ExamMCPServer:
             Returns:
                 JSON string with question details
             """
+  
             try:
                 question = self.questions_store.question(question_id)
                 return json.dumps({
@@ -181,10 +217,7 @@ class ExamMCPServer:
             """
             try:
                 question = self.questions_store.question(question_id)
-                print(question+"!!!!")
                 answer = load_answer_cache(question)
-
-
                 
                 if not answer:
                     return json.dumps({"error": f"No checklist found for question {question_id}"})
@@ -224,8 +257,9 @@ class ExamMCPServer:
             try:
                 from exam.openai import llm_client
                 from exam.assess import TEMPLATE
+                
                 question = self.questions_store.question(question_id)
-
+                
                 # Create feature object
                 feature_type_lower = feature_type.lower().replace("_", " ")
                 if feature_type_lower == "shouldnt":
@@ -468,7 +502,12 @@ class ExamMCPServer:
         
         tools["save_assessment"] = save_assessment
         
-        return tools
+        # Wrap all tools with error logging
+        wrapped_tools = {}
+        for name, func in tools.items():
+            wrapped_tools[name] = tool_wrapper(name, func)
+        
+        return wrapped_tools
     
     def get_tool_descriptions(self):
         """Get descriptions of all available tools."""

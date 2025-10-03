@@ -1,6 +1,5 @@
 """
-MCP Client using Groq - SUPER FAST and FREE!
-Recommended: Llama 3.3 70B (best quality + speed)
+MCP Client using Groq 
 """
 
 import asyncio
@@ -17,7 +16,7 @@ from exam.mcp import ExamMCPServer
 
 
 class MCPClientDemo:
-    """Demo client using Groq's super-fast LLMs."""
+    """Client using Groq's"""
     
     def __init__(self, exam_dir: Path = None, model: str = "llama-3.3"):
 
@@ -60,9 +59,6 @@ class MCPClientDemo:
             model = "llama-3.3"
         
         config = model_configs[model]
-        print(f"# Using Groq: {config['display']}")
-        print(f"# Model: {config['name']}")
-        print(f"# Limits: 30 req/min, 14,400 tokens/min (FREE)")
         
         # Initialize Groq LLM
         self.llm = ChatGroq(
@@ -161,7 +157,10 @@ class MCPClientDemo:
         
         # Create agent prompt
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an exam assessment assistant with access to tools.
+    ("system", """You are an exam assessment assistant with access to tools.
+
+IMPORTANT: When you need to use a tool, you MUST call it properly using the tool calling mechanism.
+Do NOT generate XML or text descriptions of tool calls - actually invoke the tools.
 
 Your capabilities:
 - Read questions and student answers
@@ -171,10 +170,10 @@ Your capabilities:
 - Search course materials
 - Generate feedback
 
-Be systematic, thorough, and fair in your assessments."""),
-            ("user", "{input}"),
-            ("assistant", "{agent_scratchpad}"),
-        ])
+Be systematic and thorough. Call tools one at a time and wait for results."""),
+    ("user", "{input}"),
+    ("assistant", "{agent_scratchpad}"),
+])
         
         # Create agent
         agent = create_tool_calling_agent(self.llm, self.langchain_tools, prompt)
@@ -224,7 +223,7 @@ async def demo_simple():
     client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
     
     await client.run_agent("""
-        Find the first student who answered "BuildAutomation-1".
+        Find the student with code 280944 who answered "BuildAutomation-2".
         Assess their answer using the checklist.
         Calculate score and provide brief feedback.
     """)
