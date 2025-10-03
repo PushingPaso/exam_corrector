@@ -181,7 +181,10 @@ class ExamMCPServer:
             """
             try:
                 question = self.questions_store.question(question_id)
+                print(question+"!!!!")
                 answer = load_answer_cache(question)
+
+
                 
                 if not answer:
                     return json.dumps({"error": f"No checklist found for question {question_id}"})
@@ -221,9 +224,8 @@ class ExamMCPServer:
             try:
                 from exam.openai import llm_client
                 from exam.assess import TEMPLATE
-                
                 question = self.questions_store.question(question_id)
-                
+
                 # Create feature object
                 feature_type_lower = feature_type.lower().replace("_", " ")
                 if feature_type_lower == "shouldnt":
