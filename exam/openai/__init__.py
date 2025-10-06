@@ -1,45 +1,56 @@
 import getpass
 import os
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 
 
-KEY_OPENROUTER_API_KEY = "OPENROUTER_API_KEY"
+KEY_GROQ_API_KEY = "GROQ_API_KEY"
 
 
-def ensure_openrouter_api_key():
-    """Ensures OpenRouter API key is available in environment."""
-    if not os.environ.get(KEY_OPENROUTER_API_KEY):
-        os.environ[KEY_OPENROUTER_API_KEY] = getpass.getpass("Enter API key for OpenRouter: ")
-    return os.environ[KEY_OPENROUTER_API_KEY]
+def ensure_groq_api_key():
+    """Ensures Groq API key is available in environment."""
+    if not os.environ.get(KEY_GROQ_API_KEY):
+        os.environ[KEY_GROQ_API_KEY] = getpass.getpass("Enter API key for Groq: ")
+    return os.environ[KEY_GROQ_API_KEY]
 
 
 def llm_client(model_name: str = None, model_provider: str = None, structured_output: type = None):
     """
-    Creates an LLM client configured for OpenRouter.
+    Creates an LLM client configured for Groq.
     
     Args:
-        model_name: Model identifier (default: mistralai/mistral-7b-instruct)
-        model_provider: Provider name (kept for compatibility, but uses OpenRouter)
+        model_name: Model identifier (default: llama-3.3-70b-versatile)
+        model_provider: Provider name (kept for compatibility, uses Groq)
         structured_output: Optional Pydantic model for structured output
     
     Returns:
         Tuple of (llm_instance, model_name, model_provider)
     """
-    if not model_name:
-        model_name = "qwen/qwen3-coder:free"
+    # Model configurations
+    model_configs = {
+        "llama-3.3": "llama-3.3-70b-versatile",
+        "llama-3.1": "llama-3.1-70b-versatile",
+        "mixtral": "mixtral-8x7b-32768",
+        "llama-8b": "llama-3.1-8b-instant",
+    }
     
-    # For compatibility, default provider to "openrouter"
+    # Use model_name directly if it's a full Groq model name
+    if model_name and model_name in model_configs:
+        model_name = model_configs[model_name]
+    elif not model_name:
+        model_name = "llama-3.3-70b-versatile"  # Default
+    
+    # For compatibility
     if not model_provider:
-        model_provider = "openrouter"
+        model_provider = "groq"
     
-    ensure_openrouter_api_key()
+    ensure_groq_api_key()
     
-    # Create ChatOpenAI instance configured for OpenRouter
-    llm = ChatOpenAI(
+    # Create ChatGroq instance
+    llm = ChatGroq(
         model=model_name,
-        openai_api_key=os.environ[KEY_OPENROUTER_API_KEY],
-        openai_api_base="https://openrouter.ai/api/v1",
+        groq_api_key=os.environ[KEY_GROQ_API_KEY],
         temperature=0.1,  # Lower temperature for more consistent grading
+        max_tokens=8000,
     )
     
     if structured_output is not None:
@@ -49,7 +60,7 @@ def llm_client(model_name: str = None, model_provider: str = None, structured_ou
 
 
 class AIOracle:
-    """Base class for AI-powered operations using OpenRouter/Mistral."""
+    """Base class for AI-powered operations using Groq."""
     
     def __init__(self, model_name: str = None, model_provider: str = None, structured_output: type = None):
         self.__llm, self.__model_name, self.__model_provider = llm_client(
