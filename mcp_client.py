@@ -4,6 +4,7 @@ MCP Client using Groq
 
 import asyncio
 import json
+from exam import Question
 from pathlib import Path
 from langchain_groq import ChatGroq
 from langchain.agents import AgentExecutor, create_tool_calling_agent
@@ -34,7 +35,7 @@ class MCPClientDemo:
         model_configs = {
             "llama-3.3": {
                 "name": "llama-3.3-70b-versatile",
-                "display": "Llama 3.3 70B Versatile (BEST!)",
+                "display": "Llama 3.3 70B Versatile",
                 "max_tokens": 8000
             },
             "llama-3.1": {
@@ -107,28 +108,16 @@ class MCPClientDemo:
         
         @tool
         async def assess_feature_tool(
-            question_id: str,
-            feature_description: str,
-            feature_type: str,
-            student_answer: str
+            question: Question,
+            student_answer: str,
         ) -> str:
             """Assess whether a feature is present in a student's answer."""
             return await self.mcp_server.tools["assess_feature"](
-                question_id, feature_description, feature_type, student_answer
+                question, student_answer
             )
         langchain_tools.append(assess_feature_tool)
         
-        @tool
-        async def calculate_score_tool(assessments_json: str, max_score: float) -> str:
-            """Calculate the score based on feature assessments."""
-            return await self.mcp_server.tools["calculate_score"](assessments_json, max_score)
-        langchain_tools.append(calculate_score_tool)
-        
-        @tool
-        async def search_course_material_tool(query: str, max_results: int = 5) -> str:
-            """Search course materials for relevant content."""
-            return await self.mcp_server.tools["search_course_material"](query, max_results)
-        langchain_tools.append(search_course_material_tool)
+
         
         @tool
         async def generate_feedback_tool(assessments_json: str) -> str:
@@ -165,10 +154,8 @@ Do NOT generate XML or text descriptions of tool calls - actually invoke the too
 Your capabilities:
 - Read questions and student answers
 - Access assessment checklists
-- Evaluate features in answers
-- Calculate scores
-- Search course materials
-- Generate feedback
+- assess feature
+- Generate and save feedback
 
 Be systematic and thorough. Call tools one at a time and wait for results."""),
     ("user", "{input}"),
@@ -223,9 +210,9 @@ async def demo_simple():
     client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
     
     await client.run_agent("""
-        Find the student with code 280944 who answered "BuildAutomation-2".
-        Assess their answer using the checklist.
-        Calculate score and provide brief feedback.
+        Find the student with code 280944 who answered  at thre question with id "Definition-5".
+        Get the checklist, use it to assess the answer and save the feedback.
+        
     """)
 
 

@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
-from exam import QuestionsStore, Question
+from exam import get_questions_store, Question
 from exam.solution import Answer, load_cache as load_answer_cache
 from exam.assess import Assessor, FeatureAssessment, Feature, FeatureType
 from exam.rag import sqlite_vector_store
@@ -25,7 +25,7 @@ class ExamMCPServer:
             exam_dir: Directory containing student submissions
         """
         self.exam_dir = exam_dir
-        self.questions_store = QuestionsStore()
+        self.questions_store = get_questions_store() 
         self.vector_store = None
         
         # Try to initialize vector store only if it has content
@@ -118,7 +118,7 @@ class ExamMCPServer:
                     "max_lines": question.max_lines
                 }, indent=2)
             except KeyError:
-                return json.dumps({"error": f"Question {question_id} not found"})
+                return json.dumps({"error": f"Question '{question_id}' not found"})
         
         tools["get_question"] = get_question
         
@@ -235,65 +235,72 @@ class ExamMCPServer:
         
         tools["get_checklist"] = get_checklist
         
-        # Tool 6: assess_feature
         async def assess_feature(
-            question_id: str,
-            feature_description: str,
-            feature_type: str,
+            question: Question,
             student_answer: str
         ) -> str:
             """
-            Assess whether a specific feature is present in a student's answer.
+            Assess ALL features of a student answer against the checklist.
             
             Args:
                 question_id: The ID of the question
-                feature_description: Description of what to look for
-                feature_type: Type of feature ("SHOULD", "SHOULDNT", "EXAMPLE", "SEE_ALSO")
                 student_answer: The student's answer text
             
             Returns:
-                JSON string with assessment result (satisfied, motivation)
+                JSON string with list of all feature assessments
             """
             try:
                 from exam.openai import llm_client
-                from exam.assess import TEMPLATE
+                from exam.assess import TEMPLATE, enumerate_features
+                from exam.solution import load_cache as load_answer_cache
                 
-                question = self.questions_store.question(question_id)
+                # Get question and checklist
+                answer_cache = load_answer_cache(question)
+
                 
-                # Create feature object
-                feature_type_lower = feature_type.lower().replace("_", " ")
-                if feature_type_lower == "shouldnt":
-                    feature_type_lower = "mistake"
-                feature_type_enum = FeatureType(feature_type_lower)
-                feature = Feature(type=feature_type_enum, description=feature_description)
+                # Assess all features
+                assessments = []
                 
-                # Prepare prompt
-                prompt = TEMPLATE.format(
-                    class_name="FeatureAssessment",
-                    question=question.text,
-                    feature_type=feature.type.value,
-                    feature_verb_ideal=feature.verb_ideal,
-                    feature_verb_actual=feature.verb_actual,
-                    feature=feature.description,
-                    answer=student_answer
-                )
+                print(f"[TOOL] assess_feature: Evaluating {question.id} with checklist...")
                 
-                # Get LLM client
-                llm, _, _ = llm_client(structured_output=FeatureAssessment)
+                for index, feature in enumerate_features(answer_cache, only_critical=True):
+                    print(f"[TOOL] assess_feature: Checking feature {index+1}: {feature.description[:50]}...")
+                    
+                    # Prepare prompt
+                    prompt = TEMPLATE.format(
+                        class_name="FeatureAssessment",
+                        question=question.text,
+                        feature_type=feature.type.value,
+                        feature_verb_ideal=feature.verb_ideal,
+                        feature_verb_actual=feature.verb_actual,
+                        feature=feature.description,
+                        answer=student_answer
+                    )
+                    
+                    # Get LLM client
+                    llm, _, _ = llm_client(structured_output=FeatureAssessment)
+                    
+                    # Invoke assessment
+                    result = llm.invoke(prompt)
+                    
+                    assessments.append({
+                        "feature": feature.description,
+                        "feature_type": feature.type.name,
+                        "satisfied": result.satisfied,
+                        "motivation": result.motivation
+                    })
                 
-                # Invoke assessment
-                result = llm.invoke(prompt)
+                print(f"[TOOL] assess_feature: Completed {len(assessments)} feature assessments")
                 
                 return json.dumps({
-                    "feature": feature_description,
-                    "feature_type": feature_type,
-                    "satisfied": result.satisfied,
-                    "motivation": result.motivation
+                    "question_id": question.id,
+                    "assessments": assessments,
+                    "total_features": len(assessments)
                 }, indent=2)
                 
             except Exception as e:
                 return json.dumps({"error": str(e)})
-        
+
         tools["assess_feature"] = assess_feature
         
         # Tool 7: calculate_score

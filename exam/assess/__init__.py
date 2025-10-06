@@ -7,6 +7,7 @@ from enum import Enum
 from yaml import safe_dump, safe_load
 from dataclasses import dataclass
 import re
+from exam import get_questions_store
 from dataclasses import dataclass, field
 import sys
 import os
@@ -19,7 +20,7 @@ else:
     OUTPUT_FILE = sys.stdout
 
 
-ALL_QUESTIONS = QuestionsStore()
+ALL_QUESTIONS = get_questions_store()
 PATTERN_QUESTION_FOLDER = re.compile(r"^Q\d+\s+-\s+(\w+-\d+)$")
 FILE_TEMPLATE = DIR_ROOT / "exam" / "assess" / "prompt-template.txt"
 TEMPLATE = FILE_TEMPLATE.read_text(encoding="utf-8")
@@ -103,13 +104,14 @@ def enumerate_features(answer: Answer, only_critical: bool = False):
         i += 1
     
     # EXAMPLE e SEE_ALSO - solo se richiesto
-    if not only_critical:
-        for example in answer.examples:
-            yield i, Feature(type=FeatureType.EXAMPLE, description=example)
-            i += 1
-        for see_also in answer.see_also:
-            yield i, Feature(type=FeatureType.SEE_ALSO, description=see_also)
-            i += 1
+
+    for example in answer.examples:
+        yield i, Feature(type=FeatureType.EXAMPLE, description=example)
+        i += 1
+
+    for see_also in answer.see_also:
+        yield i, Feature(type=FeatureType.SEE_ALSO, description=see_also)
+        i += 1
 
 
 class FeatureAssessment(BaseModel):

@@ -203,7 +203,7 @@ def create_mock_exam_structure(
     try:
         questions_store = QuestionsStore()
         if question_ids is None:
-            questions = questions_store.questions[:3]  # Prime 5 domande
+            questions = questions_store.questions[:3]  # Prime 3 domande
         else:
             questions = [questions_store.question(qid) for qid in question_ids]
     except Exception as e:
@@ -233,7 +233,7 @@ def create_mock_exam_structure(
         question_dir = output_path / f"Q{q_idx:02d} - {question.id}"
         question_dir.mkdir(exist_ok=True)
         
-        print(f"📋 Domanda {q_idx}: {question.id}")
+        print(f" Domanda {q_idx}: {question.id}")
         print(f"   {question.text[:60]}...")
         
         # Crea sottodirectory per ogni studente

@@ -3,7 +3,7 @@ from exam.solution import SolutionProvider
 import sys
 
 
-questions = QuestionsStore()
+questions = get_questions_store()
 llm = SolutionProvider()
 
 if len(sys.argv) > 1:

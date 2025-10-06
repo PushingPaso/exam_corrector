@@ -6,9 +6,20 @@ from pathlib import Path
 from io import StringIO
 from markdown import markdown
 
-
 DIR_ROOT = Path(__file__).parent.parent
 DEFAULT_QUESTIONS_FILE = DIR_ROOT / "static" / "questions.csv" 
+
+_QUESTIONS_STORE_INSTANCE = None
+
+def get_questions_store(questions=DEFAULT_QUESTIONS_FILE):
+    """
+    Get or create the singleton QuestionsStore instance.
+    This ensures all parts of the system use the same instance.
+    """
+    global _QUESTIONS_STORE_INSTANCE
+    if _QUESTIONS_STORE_INSTANCE is None:
+        _QUESTIONS_STORE_INSTANCE = QuestionsStore(questions)
+    return _QUESTIONS_STORE_INSTANCE
 
 
 class IdGenerator:
@@ -142,9 +153,29 @@ class QuestionsStore:
         return category
     
     def question(self, id):
-        if id not in self.__questions_by_id:
-            raise KeyError(f"Question {id} not found")
-        return self.__questions_by_id[id]
+    # Prova ricerca esatta
+        if id in self.__questions_by_id:
+            return self.__questions_by_id[id]
+        
+        # Prova ricerca case-insensitive
+        id_lower = id.lower()
+        for qid, question in self.__questions_by_id.items():
+            if qid.lower() == id_lower:
+                return question
+        
+        # Prova ricerca fuzzy (rimuovi spazi, trattini)
+        id_normalized = id.replace(" ", "").replace("-", "").lower()
+        for qid, question in self.__questions_by_id.items():
+            qid_normalized = qid.replace(" ", "").replace("-", "").lower()
+            if qid_normalized == id_normalized:
+                return question
+        
+        # Se ancora non trovato, mostra quali sono disponibili
+        available_ids = list(self.__questions_by_id.keys())
+        raise KeyError(
+            f"Question '{id}' not found. Available IDs: {available_ids[:10]}"
+            + (f"... and {len(available_ids)-10} more" if len(available_ids) > 10 else "")
+        )
     
     def questions_in_category(self, category):
         category = self.category(category)
