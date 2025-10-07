@@ -19,7 +19,7 @@ from exam.mcp import ExamMCPServer
 class MCPClientDemo:
     """Client using Groq's"""
     
-    def __init__(self, exam_dir: Path = None, model: str = "llama-3.3"):
+    def __init__(self, exam_dir: Path = None, model: str = "llama-3.1"):
 
         self.mcp_server = ExamMCPServer(exam_dir)
         
@@ -107,38 +107,17 @@ class MCPClientDemo:
         langchain_tools.append(get_checklist_tool)
         
         @tool
-        async def assess_feature_tool(
-            question: Question,
+        async def assess_and_save_feature_tool(
+            question_id: str,
             student_answer: str,
+            student_code: str,
         ) -> str:
             """Assess whether a feature is present in a student's answer."""
-            return await self.mcp_server.tools["assess_feature"](
-                question, student_answer
+            return await self.mcp_server.tools["assess_and_save_feature"](
+                question_id, student_answer, student_code
             )
-        langchain_tools.append(assess_feature_tool)
-        
-
-        
-        @tool
-        async def generate_feedback_tool(assessments_json: str) -> str:
-            """Generate constructive feedback based on assessments."""
-            return await self.mcp_server.tools["generate_feedback"](assessments_json)
-        langchain_tools.append(generate_feedback_tool)
-        
-        @tool
-        async def save_assessment_tool(
-            question_id: str,
-            student_code: str,
-            score: float,
-            assessments_json: str,
-            feedback: str = ""
-        ) -> str:
-            """Save assessment results for a student."""
-            return await self.mcp_server.tools["save_assessment"](
-                question_id, student_code, score, assessments_json, feedback
-            )
-        langchain_tools.append(save_assessment_tool)
-        
+        langchain_tools.append(assess_and_save_feature_tool)
+            
         return langchain_tools
     
     async def run_agent(self, task: str, verbose: bool = True):
@@ -152,10 +131,10 @@ IMPORTANT: When you need to use a tool, you MUST call it properly using the tool
 Do NOT generate XML or text descriptions of tool calls - actually invoke the tools.
 
 Your capabilities:
-- Read questions and student answers
-- Access assessment checklists
-- assess feature
-- Generate and save feedback
+- Read questions
+- find student answers
+-Gget feature checklists
+- Evalute the answear with feature and save feature
 
 Be systematic and thorough. Call tools one at a time and wait for results."""),
     ("user", "{input}"),

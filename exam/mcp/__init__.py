@@ -235,16 +235,20 @@ class ExamMCPServer:
         
         tools["get_checklist"] = get_checklist
         
-        async def assess_feature(
-            question: Question,
-            student_answer: str
+        # Tool 6: assess_feature (con auto-save)
+        async def assess_and_save_feature(
+            question_id: str,
+            student_answer: str,
+            student_code: str = None  # Aggiungi questo
         ) -> str:
             """
             Assess ALL features of a student answer against the checklist.
+            Automatically saves results if student_code is provided.
             
             Args:
                 question_id: The ID of the question
                 student_answer: The student's answer text
+                student_code: Optional student code (if provided, saves results)
             
             Returns:
                 JSON string with list of all feature assessments
@@ -254,19 +258,17 @@ class ExamMCPServer:
                 from exam.assess import TEMPLATE, enumerate_features
                 from exam.solution import load_cache as load_answer_cache
                 
-                # Get question and checklist
+                question = self.questions_store.question(question_id)
                 answer_cache = load_answer_cache(question)
-
                 
-                # Assess all features
+                if not answer_cache:
+                    return json.dumps({"error": f"No checklist found for {question_id}"})
+                
                 assessments = []
                 
-                print(f"[TOOL] assess_feature: Evaluating {question.id} with checklist...")
+                print(f"[TOOL] assess_feature: Evaluating {question_id}...")
                 
                 for index, feature in enumerate_features(answer_cache, only_critical=True):
-                    print(f"[TOOL] assess_feature: Checking feature {index+1}: {feature.description[:50]}...")
-                    
-                    # Prepare prompt
                     prompt = TEMPLATE.format(
                         class_name="FeatureAssessment",
                         question=question.text,
@@ -277,12 +279,8 @@ class ExamMCPServer:
                         answer=student_answer
                     )
                     
-                    # Get LLM client
                     llm, _, _ = llm_client(structured_output=FeatureAssessment)
-                    
-                    # Invoke assessment
                     result = llm.invoke(prompt)
-                    
                     assessments.append({
                         "feature": feature.description,
                         "feature_type": feature.type.name,
@@ -290,224 +288,39 @@ class ExamMCPServer:
                         "motivation": result.motivation
                     })
                 
-                print(f"[TOOL] assess_feature: Completed {len(assessments)} feature assessments")
+                print(f"[TOOL] assess_feature: Completed {len(assessments)} assessments")
                 
-                return json.dumps({
-                    "question_id": question.id,
+                result = {
+                    "question_id": question_id,
                     "assessments": assessments,
                     "total_features": len(assessments)
-                }, indent=2)
-                
-            except Exception as e:
-                return json.dumps({"error": str(e)})
-
-        tools["assess_feature"] = assess_feature
-        
-        # Tool 7: calculate_score
-        async def calculate_score(assessments_json: str, max_score: float) -> str:
-            """
-            Calculate the score based on feature assessments.
-            
-            Args:
-                assessments_json: JSON string with list of assessments
-                                 [{"feature_type": "SHOULD", "satisfied": true}, ...]
-                max_score: Maximum possible score for the question
-            
-            Returns:
-                JSON string with calculated score and breakdown
-            """
-            try:
-                assessments = json.loads(assessments_json)
-                
-                should_total = sum(1 for a in assessments if a["feature_type"] == "SHOULD")
-                should_satisfied = sum(1 for a in assessments 
-                                     if a["feature_type"] == "SHOULD" and a["satisfied"])
-                
-                shouldnt_total = sum(1 for a in assessments if a["feature_type"] == "SHOULDNT")
-                shouldnt_violated = sum(1 for a in assessments 
-                                      if a["feature_type"] == "SHOULDNT" and not a["satisfied"])
-                
-                if should_total == 0:
-                    return json.dumps({"error": "No SHOULD features to evaluate"})
-                
-                base_percentage = should_satisfied / should_total
-                penalty_per_error = 0.15
-                error_penalty = shouldnt_violated * penalty_per_error
-                final_percentage = max(0.0, base_percentage - error_penalty)
-                score = round(final_percentage * max_score, 2)
-                
-                breakdown = f"Base: {should_satisfied}/{should_total} SHOULD ({base_percentage*100:.0f}%)"
-                if shouldnt_violated > 0:
-                    breakdown += f" - Errors: {shouldnt_violated}/{shouldnt_total} mistakes (-{error_penalty*100:.0f}%)"
-                breakdown += f" = {final_percentage*100:.0f}% of {max_score} = {score}"
-                
-                return json.dumps({
-                    "score": score,
-                    "max_score": max_score,
-                    "percentage": round(final_percentage * 100, 1),
-                    "breakdown": breakdown,
-                    "details": {
-                        "should_satisfied": should_satisfied,
-                        "should_total": should_total,
-                        "errors": shouldnt_violated,
-                        "error_total": shouldnt_total
-                    }
-                }, indent=2)
-                
-            except Exception as e:
-                return json.dumps({"error": str(e)})
-        
-        tools["calculate_score"] = calculate_score
-        
-        # Tool 8: search_course_material
-        async def search_course_material(query: str, max_results: int = 5) -> str:
-            """
-            Search course materials using RAG (Retrieval-Augmented Generation).
-            
-            Args:
-                query: Search query
-                max_results: Maximum number of results to return (default: 5)
-            
-            Returns:
-                JSON string with relevant course material snippets
-            """
-            if not self.vector_store:
-                return json.dumps({"error": "RAG vector store not available"})
-            
-            try:
-                results = self.vector_store.similarity_search(query, k=max_results)
-                
-                materials = []
-                for doc in results:
-                    materials.append({
-                        "content": doc.page_content,
-                        "source": doc.metadata.get("source", "unknown"),
-                        "lines": doc.metadata.get("lines", [0, 0]),
-                        "index": doc.metadata.get("index", 0)
-                    })
-                
-                return json.dumps({
-                    "query": query,
-                    "results_count": len(materials),
-                    "materials": materials
-                }, indent=2)
-                
-            except Exception as e:
-                return json.dumps({"error": str(e)})
-        
-        tools["search_course_material"] = search_course_material
-        
-        # Tool 9: generate_feedback
-        async def generate_feedback(assessments_json: str) -> str:
-            """
-            Generate constructive feedback based on assessments.
-            
-            Args:
-                assessments_json: JSON string with list of assessments
-            
-            Returns:
-                JSON string with generated feedback text
-            """
-            try:
-                assessments = json.loads(assessments_json)
-                
-                feedback_parts = []
-                
-                # Positive feedback
-                satisfied = [a for a in assessments 
-                           if a.get("feature_type") == "SHOULD" and a.get("satisfied")]
-                if satisfied:
-                    feedback_parts.append("**Strengths:**")
-                    for a in satisfied[:3]:  # Top 3
-                        feedback_parts.append(f"- {a.get('motivation', 'Good work')}")
-                
-                # Areas for improvement
-                unsatisfied = [a for a in assessments 
-                             if a.get("feature_type") == "SHOULD" and not a.get("satisfied")]
-                if unsatisfied:
-                    feedback_parts.append("\n**Areas for Improvement:**")
-                    for a in unsatisfied:
-                        feedback_parts.append(f"- {a.get('motivation', 'Needs work')}")
-                
-                # Errors to avoid
-                errors = [a for a in assessments 
-                         if a.get("feature_type") == "SHOULDNT" and not a.get("satisfied")]
-                if errors:
-                    feedback_parts.append("\n**Errors to Correct:**")
-                    for a in errors:
-                        feedback_parts.append(f"- {a.get('motivation', 'Avoid this error')}")
-                
-                feedback_text = "\n".join(feedback_parts)
-                
-                return json.dumps({
-                    "feedback": feedback_text,
-                    "strengths_count": len(satisfied),
-                    "improvements_needed": len(unsatisfied),
-                    "errors_found": len(errors)
-                }, indent=2)
-                
-            except Exception as e:
-                return json.dumps({"error": str(e)})
-        
-        tools["generate_feedback"] = generate_feedback
-        
-        # Tool 10: save_assessment
-        async def save_assessment(
-            question_id: str,
-            student_code: str,
-            score: float,
-            assessments_json: str,
-            feedback: str = ""
-        ) -> str:
-            """
-            Save the assessment results for a student.
-            
-            Args:
-                question_id: The ID of the question
-                student_code: The student's code
-                score: The calculated score
-                assessments_json: JSON string with all feature assessments
-                feedback: Optional feedback text
-            
-            Returns:
-                JSON string with save confirmation
-            """
-            if not self.exam_dir:
-                return json.dumps({"error": "No exam directory configured"})
-            
-            try:
-                # Find student directory
-                pattern = f"Q* - {question_id}/{student_code} - *"
-                matching_dirs = list(self.exam_dir.glob(pattern))
-                
-                if not matching_dirs:
-                    return json.dumps({"error": f"Student directory not found"})
-                
-                student_dir = matching_dirs[0]
-                
-                # Save summary
-                summary_file = student_dir / "assessment_summary.json"
-                summary = {
-                    "question_id": question_id,
-                    "student_code": student_code,
-                    "score": score,
-                    "assessments": json.loads(assessments_json),
-                    "feedback": feedback
                 }
                 
-                with open(summary_file, "w", encoding="utf-8") as f:
-                    json.dump(summary, f, indent=2, ensure_ascii=False)
+                # Auto-save if student_code provided
+                if student_code and self.exam_dir:
+                    try:
+                        pattern = f"Q* - {question_id}/{student_code} - *"
+                        matching_dirs = list(self.exam_dir.glob(pattern))
+                        
+                        if matching_dirs:
+                            student_dir = matching_dirs[0]
+                            summary_file = student_dir / "assessment_summary.json"
+                            
+                            with open(summary_file, "w", encoding="utf-8") as f:
+                                json.dump(result, f, indent=2, ensure_ascii=False)
+                            
+                            print(f"[TOOL] assess_feature: Auto-saved to {summary_file}")
+                            result["saved_to"] = str(summary_file)
+                    except Exception as e:
+                        print(f"[TOOL] assess_feature: Auto-save failed: {e}")
                 
-                return json.dumps({
-                    "status": "success",
-                    "saved_to": str(summary_file),
-                    "score": score
-                }, indent=2)
+                return json.dumps(result, indent=2)
                 
             except Exception as e:
                 return json.dumps({"error": str(e)})
-        
-        tools["save_assessment"] = save_assessment
+            
+        tools["assess_and_save_feature"] = assess_and_save_feature
+
         
         # Wrap all tools with error logging
         wrapped_tools = {}

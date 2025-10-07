@@ -18,9 +18,8 @@ def llm_client(model_name: str = None, model_provider: str = None, structured_ou
     Creates an LLM client configured for Groq.
     
     Args:
-        model_name: Model identifier (default: llama-3.3-70b-versatile)
-        model_provider: Provider name (kept for compatibility, uses Groq)
-        structured_output: Optional Pydantic model for structured output
+        model_name: llama-3.3-70b
+        model_provider: Groq
     
     Returns:
         Tuple of (llm_instance, model_name, model_provider)
