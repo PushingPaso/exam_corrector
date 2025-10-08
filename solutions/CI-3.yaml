@@ -1,36 +1,127 @@
-examples:
-- Example of a CI pipeline might include steps such as code checkout, build, test,
-  and deployment in that order.
-- Comparison between GitHub Actions and Travis CI in terms of how they organize pipeline
-  stages.
+core:
+- A pipeline is a sequence of operations associated with events
+- A pipeline is composed of a sequence of operations
+details_additional:
+- The hierarchical levels of a pipeline can vary depending on the specific platform,
+  such as GitHub Actions or Travis CI
+- Examples of pipeline operations include building, testing, and deploying code
+- Pipelines can be designed to run automatically in response to specific events or
+  triggers
+details_important:
+- Pipelines can be associated with events such as new commits, updates to pull requests,
+  or timeouts
+- Every operation in a pipeline could be composed of sequential or parallel sub-operations
+- Execution of a pipeline happens in a fresh system, such as a virtual machine or
+  container
 helps:
-- "## Pipeline design\n\nIn essence, designing a CI system is designing a software\
-  \ construction, verification, and delivery *pipeline*\nwith the abstractions provided\
-  \ by the selected provider.\n\n1. **Think** of all the operations required starting\
-  \ from one or more *blank* VMs\n    * OS configuration\n    * Software installation\n\
-  \    * Project checkout\n    * Compilation\n    * Testing\n    * Secrets configuration\n\
-  \    * Delivery\n    * ...\n2. **Organize** them in a dependency graph\n3. **Model**\
-  \ the graph with the provided CI tooling\n\nConfiguration can grow complex, and\
-  \ is usually stored in a YAML file\n<br>\n(but there are exceptions, JetBrains TeamCity\
-  \ uses a Kotlin DSL).\n"
-- '# Continuous Integration
+- '## Check your understanding (pt. 2)
 
 
-  The practice of integrating code with a main development line **continuously**
+  - In the context of software engineering, what is integration? What is continuous
+  integration?
 
-  <br>
+  - In the context of software engineering, what are the issues arising from infrequent
+  integration/release events?
 
-  _Verifying_ that the build remains intact
+  - In the context of software engineering, how to make integration continuous?
 
-  * Requires *build automation* to be in place
+  - What is GitHub Actions? What is its purpose? How does it work?
 
-  * Requires *testing* to be in place
+  - In the context of GitHub Actions, what is the difference among workflow, jobs,
+  steps
 
-  * Pivot point of the *DevOps* practices
+  - In an ordinary Python project using Poetry for build automation and release on
+  PyPi and `unittest` for automatic tests, how would you organize a continuous integration
+  pipeline? (What operations should be performed in each run of the pipeline?)
 
-  * Historically introduced by the extreme programming (XP) community
 
-  * Now widespread in the larger DevOps community
+  {{% /section %}}
+
+  '
+- '## Check your understanding (pt. 2)
+
+
+  - In the context of software engineering, what is integration? What is continuous
+  integration?
+
+  - In the context of software engineering, what are the issues arising from infrequent
+  integration/release events?
+
+  - In the context of software engineering, how to make integration continuous?
+
+  - What is GitHub Actions? What is its purpose? How does it work?
+
+  - In the context of GitHub Actions, what is the difference among workflow, jobs,
+  steps
+
+  - In an ordinary Python project using Poetry for build automation and release on
+  PyPi and `unittest` for automatic tests, how would you organize a continuous integration
+  pipeline? (What operations should be performed in each run of the pipeline?)
+
+
+  {{% /section %}}
+
+  '
+- '{{% section %}}
+
+
+  ## Check your understanding (pt. 1)
+
+
+  - In your own words, what is continuous integration?
+
+  - In your own words, what is integration hell?
+
+  - In the context of continuous integration, what is a pipeline?
+
+  - What is GitHub Actions?
+
+  - In the context of continuous integration, provide an overview of the abstract
+  pipeline design
+
+  - In the context of GitHub Actions, what is the difference among workflow, jobs,
+  steps
+
+  - How would you design a GitHub Actions workflow for a Python project?
+
+  - In the context of GitHub Actions, what is a runner?
+
+  - What is YAML? What is the difference between YAML and JSON?
+
+  - In the context of GitHub Actions, what is a matrix?
+
+  - In the context of GitHub Actions, what is a secret?
+
+  '
+- '{{% section %}}
+
+
+  ## Check your understanding (pt. 1)
+
+
+  - In your own words, what is continuous integration?
+
+  - In your own words, what is integration hell?
+
+  - In the context of continuous integration, what is a pipeline?
+
+  - What is GitHub Actions?
+
+  - In the context of continuous integration, provide an overview of the abstract
+  pipeline design
+
+  - In the context of GitHub Actions, what is the difference among workflow, jobs,
+  steps
+
+  - How would you design a GitHub Actions workflow for a Python project?
+
+  - In the context of GitHub Actions, what is a runner?
+
+  - What is YAML? What is the difference between YAML and JSON?
+
+  - In the context of GitHub Actions, what is a matrix?
+
+  - In the context of GitHub Actions, what is a secret?
 
   '
 - "# Core concepts\n\nNaming and organization is variable across different technological,\
@@ -44,61 +135,23 @@ helps:
   * Execution happens in a **fresh system** (virtual machine or container)\n  * Often\
   \ containers inside virtual machines\n  * The specific point of the hierarchy at\
   \ which the VM/container is spawned depends on the CI platform\n"
-- '## CI Pipeline
-
-
-  ![pipeline](https://raw.githubusercontent.com/DanySK/shared-slides/6824b93d3d52b841386a744f57953a73ccb67378/devops/docker-publish.svg)
-
-  '
-- "## Continous integration concept\n\n* The build process should be *rich* (comprehensive),\
-  \ *fast*, and **automated**\n* And run on _another machine_ (or VM) than the developer's\
-  \ one\n    + this is to avoid the developer from being _unable to work_ while the\
-  \ build is running\n    + but also to ensure that the software runs _outside_ from\
-  \ the _developer's environment_\n        - which increases the chances that the\
-  \ software will run on _other_ machines as well\n    + to allow for testing the\
-  \ software onto many, _controlled environments_\n        - which in turns allows\
-  \ for giving _compatibility guarantees_ to the customers/users\n\n{{% multicol %}}\n\
-  {{% col %}}\n<img src=\"compiling.png\" onerror=\"this.onerror=null; this.src='../../assets/compiling.png'\"\
-  \ height=100% />\n{{% /col %}}\n{{% col %}}\n{{<image src=\"./concept2.png\" width=\"\
-  100%\" alt=\"Continuous integration concept\" >}}\n{{% /col %}}\n{{% /multicol %}}\n"
 id: CI-3
-model_name: gpt-4o-mini
-model_provider: openai
+model_name: llama-3.3-70b-versatile
+model_provider: groq
 prompt_template: "You are a teacher in the Software Engineering course, for the Digital\
-  \ Transformantion and Management master programme.\nYour goal is to evaluate students\
-  \ via a questionnaire composed by open questions.\n\nYour task is to create a checklist\
-  \ of \"should\" and \"should not\" items for each question.\nIn particular, for\
-  \ each question, you should tell what contents should be mentioned in the perfect\
-  \ response,\nand, possibly, what would be contents would be common mistakes, and\
-  \ should be avoided.\nExamples as well as background/contextual/motivational information\
-  \ are welcome even if not explicitly requested.\nIn that case, fill the list with\
-  \ positive/negative examples, comparisons, and relevant background/context/motivational\
-  \ concepts to be mentioned in the perfect answer.\nEach item in the list should\
-  \ be verifiable and not fluffy.\n\nOnly extract the properties mentioned in the\
-  \ '{class_name}' function.\n\nQuestion is:\n    {question}\n\nBelow are snippets\
-  \ from the course material that may help you answer the question:\n\n{help}"
+  \ Transformation and Management master programme. \n\nYour task is to create a structured\
+  \ checklist for evaluating student answers to each question.\n\nFor each question,\
+  \ you should identify:\n\n1. **Core** - The essential elements that MUST be present\
+  \ in a perfect answer to address the most important part of the question. These\
+  \ are the fundamental concepts, definitions, or explanations that directly answer\
+  \ what is being asked.\n\n2. **Important Details** - Significant additional details\
+  \ that should be mentioned to enrich the answer. These go beyond the core but are\
+  \ important for a complete understanding.\n\n3. **Additional Details** - Optional\
+  \ supplementary details that can further improve the answer. These might include\
+  \ examples, comparisons, background context, or motivational aspects that add depth\
+  \ but are not strictly necessary.\n\nEach item in the lists should be specific,\
+  \ verifiable, and actionable - not vague or fluffy.\n\nOnly extract the properties\
+  \ mentioned in the '{class_name}' function.\n\nQuestion is:\n    {question}\n\n\
+  Below are snippets from the course material that may help you answer the question:\n\
+  \n{help}"
 question: In the context of continuous integration, what is a pipeline?
-see_also:
-- Continuous integration is a practice that cannot exist without defined pipelines.
-- The significance of efficient code testing as part of the CI/CD workflow.
-- How CI pipelines fit into broader DevOps practices and methodologies.
-should:
-- Define what a pipeline is in the context of CI (e.g., a set of automated processes
-  that ensure code changes are built, tested, and deployed efficiently).
-- Describe the main elements of a CI pipeline, including operations and events that
-  trigger a pipeline to run (e.g., new commits, pull requests).
-- Explain the organization of operations within a pipeline and how they may form a
-  dependency graph.
-- Mention that operations can be sequential or parallel and how this affects pipeline
-  execution.
-- Discuss how the CI pipeline runs in a fresh system (VM/container) to ensure consistency
-  and compatibility across different environments.
-- Provide examples of CI tools (e.g., GitHub Actions, Travis CI) and their specific
-  terminologies related to pipelines.
-should_not:
-- Avoid vague definitions or failing to mention the automation aspect of CI pipelines.
-- Do not overlook the importance of environment isolation for builds (e.g., running
-  on a fresh VM/container).
-- Refrain from overly complex language or jargon without explanation; clarity is key.
-- Avoid stating that pipelines require manual interventions, contradicting the automation
-  principle of CI.

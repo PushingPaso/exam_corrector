@@ -213,7 +213,7 @@ class ExamMCPServer:
                 question_id: The ID of the question (e.g., "Foundations-1")
             
             Returns:
-                JSON string with SHOULD, SHOULDNT, EXAMPLE, and SEE_ALSO features
+                JSON string with CORE and DETAILS
             """
             try:
                 question = self.questions_store.question(question_id)
@@ -225,10 +225,9 @@ class ExamMCPServer:
                 return json.dumps({
                     "question_id": question_id,
                     "question_text": question.text,
-                    "should": answer.should,
-                    "should_not": answer.should_not,
-                    "examples": answer.examples,
-                    "see_also": answer.see_also
+                    "core": answer.core,
+                    "details_important": answer.details_important,
+                    "details_additional": answer.details_additional,
                 }, indent=2)
             except KeyError:
                 return json.dumps({"error": f"Question {question_id} not found"})
@@ -239,7 +238,7 @@ class ExamMCPServer:
         async def assess_and_save_feature(
             question_id: str,
             student_answer: str,
-            student_code: str = None  # Aggiungi questo
+            student_code: str = None
         ) -> str:
             """
             Assess ALL features of a student answer against the checklist.
@@ -268,7 +267,7 @@ class ExamMCPServer:
                 
                 print(f"[TOOL] assess_feature: Evaluating {question_id}...")
                 
-                for index, feature in enumerate_features(answer_cache, only_critical=True):
+                for index, feature in enumerate_features(answer_cache):
                     prompt = TEMPLATE.format(
                         class_name="FeatureAssessment",
                         question=question.text,
@@ -281,19 +280,62 @@ class ExamMCPServer:
                     
                     llm, _, _ = llm_client(structured_output=FeatureAssessment)
                     result = llm.invoke(prompt)
+                    
                     assessments.append({
                         "feature": feature.description,
                         "feature_type": feature.type.name,
-                        "satisfied": result.satisfied,
-                        "motivation": result.motivation
+                        "satisfied": result.satisfied,    
+                        "motivation": result.motivation    
                     })
                 
                 print(f"[TOOL] assess_feature: Completed {len(assessments)} assessments")
                 
+                # Calcola statistiche per tipo di feature
+                core_count = sum(1 for a in assessments if a["feature_type"] == "CORE")
+                core_satisfied = sum(1 for a in assessments if a["feature_type"] == "CORE" and a["satisfied"])
+                
+                important_count = sum(1 for a in assessments if a["feature_type"] == "DETAILS_IMPORTANT")
+                important_satisfied = sum(1 for a in assessments if a["feature_type"] == "DETAILS_IMPORTANT" and a["satisfied"])
+                
+                additional_count = sum(1 for a in assessments if a["feature_type"] == "DETAILS_ADDITIONAL")
+                additional_satisfied = sum(1 for a in assessments if a["feature_type"] == "DETAILS_ADDITIONAL" and a["satisfied"])
+                
+                # Calcola score come nel sistema assess
+                core_percentage = (core_satisfied / core_count * 0.70) if core_count > 0 else 0.0
+                important_percentage = (important_satisfied / important_count * 0.20) if important_count > 0 else 0.20
+                additional_percentage = (additional_satisfied / additional_count * 0.10) if additional_count > 0 else 0.10
+                
+                final_percentage = core_percentage + important_percentage + additional_percentage
+                estimated_score = round(final_percentage * question.weight, 2)
+                
                 result = {
                     "question_id": question_id,
+                    "question_text": question.text,
                     "assessments": assessments,
-                    "total_features": len(assessments)
+                    "statistics": {
+                        "total_features": len(assessments),
+                        "core": {
+                            "total": core_count,
+                            "satisfied": core_satisfied,
+                            "percentage": round((core_satisfied / core_count * 100) if core_count > 0 else 0, 1)
+                        },
+                        "details_important": {
+                            "total": important_count,
+                            "satisfied": important_satisfied,
+                            "percentage": round((important_satisfied / important_count * 100) if important_count > 0 else 0, 1)
+                        },
+                        "details_additional": {
+                            "total": additional_count,
+                            "satisfied": additional_satisfied,
+                            "percentage": round((additional_satisfied / additional_count * 100) if additional_count > 0 else 0, 1)
+                        }
+                    },
+                    "estimated_score": {
+                        "score": estimated_score,
+                        "max_score": question.weight,
+                        "percentage": round(final_percentage * 100, 1),
+                        "breakdown": f"Core: {core_satisfied}/{core_count} (70%) + Important: {important_satisfied}/{important_count} (20%) + Additional: {additional_satisfied}/{additional_count} (10%)"
+                    }
                 }
                 
                 # Auto-save if student_code provided
@@ -314,14 +356,19 @@ class ExamMCPServer:
                     except Exception as e:
                         print(f"[TOOL] assess_feature: Auto-save failed: {e}")
                 
-                return json.dumps(result, indent=2)
+                return json.dumps(result, indent=2, ensure_ascii=False)
                 
             except Exception as e:
-                return json.dumps({"error": str(e)})
-            
+                import traceback
+                error_details = traceback.format_exc()
+                print(f"[ERROR] assess_feature: {error_details}")
+                return json.dumps({
+                    "error": str(e),
+                    "details": error_details
+                })
+
         tools["assess_and_save_feature"] = assess_and_save_feature
 
-        
         # Wrap all tools with error logging
         wrapped_tools = {}
         for name, func in tools.items():

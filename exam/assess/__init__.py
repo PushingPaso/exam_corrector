@@ -49,73 +49,67 @@ def _load_exam(exam: Path | str | list[str] | QuestionsStore) -> QuestionsStore:
 
 class FeatureType(str, Enum):
     """Enumeration of feature types that can be assessed in a question's answer."""
-    EXAMPLE = "example"
-    SHOULD = "mandatory mention"
-    SHOULDNT = "mistake"
-    SEE_ALSO = "optional mention"
+    CORE = "core"
+    DETAILS_IMPORTANT = "important detail"
+    DETAILS_ADDITIONAL = "additional detail"
 
 
 @dataclass(frozen=True)
 class Feature:
-    # Type of the feature, indicating whether it is an example, a mandatory mention, a mistake, or an optional mention.
+    # Type of the feature
     type: FeatureType
 
-    # Description of the feature, typically a string that explains what the feature is about.
+    # Description of the feature
     description: str
 
     @property
     def verb_ideal(self) -> str:
-        if self.type != FeatureType.SHOULDNT:
-            return "should be present"
-        return "should be absent"
+        return "should be present"
 
     @property
     def verb_actual(self) -> str:
-        if self.type != FeatureType.SHOULDNT:
-            return "is actually present"
-        return "is actually absent"
+        return "is actually present"
     
     @property
-    def is_critical(self) -> bool:
-        """Determina se questa feature è critica e deve sempre essere mostrata."""
-        return self.type in (FeatureType.SHOULD, FeatureType.SHOULDNT)
-
-
-def enumerate_features(answer: Answer, only_critical: bool = False):
-    """
-    Enumera le features da valutare.
+    def is_core(self) -> bool:
+        """Determina se questa feature è core (essenziale)."""
+        return self.type == FeatureType.CORE
     
-    Args:
-        answer: Answer object con le features
-        only_critical: Se True, enumera solo SHOULD e SHOULDNT (ignora EXAMPLE e SEE_ALSO)
-    """
+    @property
+    def weight_percentage(self) -> float:
+        """Restituisce il peso percentuale di questa feature nel punteggio totale."""
+        if self.type == FeatureType.CORE:
+            return 0.70  # 70% del punteggio
+        elif self.type == FeatureType.DETAILS_IMPORTANT:
+            return 0.20  # 20% del punteggio
+        else:  # DETAILS_ADDITIONAL
+            return 0.10  # 10% del punteggio
+
+
+def enumerate_features(answer: Answer):
+    """Enumera le features da valutare."""
     if not answer:
         return
     i = 0
     
-    # SHOULD - sempre incluse
-    for should in answer.should:
-        yield i, Feature(type=FeatureType.SHOULD, description=should)
+    # CORE - elementi essenziali
+    for core_item in answer.core:
+        yield i, Feature(type=FeatureType.CORE, description=core_item)
         i += 1
     
-    # SHOULDNT - sempre incluse
-    for shouldnt in answer.should_not:
-        yield i, Feature(type=FeatureType.SHOULDNT, description=shouldnt)
+    # DETAILS_IMPORTANT - dettagli importanti
+    for detail in answer.details_important:
+        yield i, Feature(type=FeatureType.DETAILS_IMPORTANT, description=detail)
         i += 1
     
-    # EXAMPLE e SEE_ALSO - solo se richiesto
-
-    for example in answer.examples:
-        yield i, Feature(type=FeatureType.EXAMPLE, description=example)
-        i += 1
-
-    for see_also in answer.see_also:
-        yield i, Feature(type=FeatureType.SEE_ALSO, description=see_also)
+    # DETAILS_ADDITIONAL - dettagli aggiuntivi
+    for detail in answer.details_additional:
+        yield i, Feature(type=FeatureType.DETAILS_ADDITIONAL, description=detail)
         i += 1
 
 
 class FeatureAssessment(BaseModel):
-    satisfied: bool = Field(description="Whether the feature is present (if it should be present) or lacking (if it shouldn't be present)")
+    satisfied: bool = Field(description="Whether the feature is present in the answer")
     motivation: str = Field(description="Explanation of why the feature is present or not")
 
 
@@ -128,7 +122,10 @@ class AnswerAssessment:
     
     def calculate_score(self, max_score: float) -> tuple[float, str]:
         """
-        Calcola il punteggio della risposta.
+        Calcola il punteggio della risposta con il nuovo sistema:
+        - Core: 70% del punteggio
+        - Details Important: 20% del punteggio
+        - Details Additional: 10% del punteggio
         
         Args:
             max_score: Punteggio massimo della domanda
@@ -140,34 +137,42 @@ class AnswerAssessment:
             return 0.0, "No features assessed"
         
         # Conta feature per tipo
-        should_total = sum(1 for f in self.assessment if f.type == FeatureType.SHOULD)
-        should_satisfied = sum(1 for f, a in self.assessment.items() 
-                              if f.type == FeatureType.SHOULD and a.satisfied)
+        core_total = sum(1 for f in self.assessment if f.type == FeatureType.CORE)
+        core_satisfied = sum(1 for f, a in self.assessment.items() 
+                            if f.type == FeatureType.CORE and a.satisfied)
         
-        shouldnt_total = sum(1 for f in self.assessment if f.type == FeatureType.SHOULDNT)
-        shouldnt_violated = sum(1 for f, a in self.assessment.items() 
-                               if f.type == FeatureType.SHOULDNT and not a.satisfied)
+        important_total = sum(1 for f in self.assessment if f.type == FeatureType.DETAILS_IMPORTANT)
+        important_satisfied = sum(1 for f, a in self.assessment.items() 
+                                 if f.type == FeatureType.DETAILS_IMPORTANT and a.satisfied)
         
-        if should_total == 0:
-            return 0.0, "No SHOULD features defined"
+        additional_total = sum(1 for f in self.assessment if f.type == FeatureType.DETAILS_ADDITIONAL)
+        additional_satisfied = sum(1 for f, a in self.assessment.items() 
+                                  if f.type == FeatureType.DETAILS_ADDITIONAL and a.satisfied)
         
-        # Calcolo base: percentuale di SHOULD soddisfatti
-        base_percentage = should_satisfied / should_total
-        
-        # Penalità per errori (SHOULDNT violati)
-        penalty_per_error = 0.15  # 15% di penalità per errore
-        error_penalty = shouldnt_violated * penalty_per_error
+        # Calcolo percentuali per categoria
+        core_percentage = (core_satisfied / core_total * 0.70) if core_total > 0 else 0.0
+        important_percentage = (important_satisfied / important_total * 0.20) if important_total > 0 else 0.20
+        additional_percentage = (additional_satisfied / additional_total * 0.10) if additional_total > 0 else 0.10
         
         # Percentuale finale
-        final_percentage = max(0.0, base_percentage - error_penalty)
+        final_percentage = core_percentage + important_percentage + additional_percentage
         
         # Score finale
         score = round(final_percentage * max_score, 2)
         
-        # Breakdown
-        breakdown = f"Base: {should_satisfied}/{should_total} SHOULD ({base_percentage*100:.0f}%)"
-        if shouldnt_violated > 0:
-            breakdown += f" - Errors: {shouldnt_violated}/{shouldnt_total} mistakes (-{error_penalty*100:.0f}%)"
+        # Breakdown dettagliato
+        breakdown_parts = []
+        
+        if core_total > 0:
+            breakdown_parts.append(f"Core: {core_satisfied}/{core_total} ({core_percentage/0.70*100:.0f}% → {core_percentage*100:.0f}%)")
+        
+        if important_total > 0:
+            breakdown_parts.append(f"Important: {important_satisfied}/{important_total} ({important_percentage/0.20*100:.0f}% → {important_percentage*100:.0f}%)")
+        
+        if additional_total > 0:
+            breakdown_parts.append(f"Additional: {additional_satisfied}/{additional_total} ({additional_percentage/0.10*100:.0f}% → {additional_percentage*100:.0f}%)")
+        
+        breakdown = " + ".join(breakdown_parts)
         breakdown += f" = {final_percentage*100:.0f}% of {max_score} = {score}"
         
         return score, breakdown
@@ -217,14 +222,14 @@ class TestAssessment:
     def assessments(self) -> list[StudentAssessment]:
         return list(self.__students_by_name.values())
 
-    def pretty_print(self, per_question: Question = None, file=OUTPUT_FILE, show_only_unsatisfied: bool = True):
+    def pretty_print(self, per_question: Question = None, file=OUTPUT_FILE, show_only_missing_core: bool = True):
         """
         Stampa le valutazioni in formato leggibile.
         
         Args:
             per_question: Se specificato, mostra solo questa domanda
             file: File dove scrivere l'output
-            show_only_unsatisfied: Se True, mostra solo le feature non soddisfatte (default)
+            show_only_missing_core: Se True, mostra solo gli elementi CORE mancanti (default)
         """
         if per_question is not None:
             print(f"Assessments for question {per_question.id}: {per_question.text}", file=file)
@@ -250,34 +255,53 @@ class TestAssessment:
                     answer_preview += "..."
                 print(f"  Answer:\n\t{answer_preview.replace(chr(10), chr(10) + chr(9))}", file=file)
                 
-                # Filtra le features da mostrare
-                features_to_show = []
-                for feature, assessment in answer.assessment.items():
-                    # Mostra solo SHOULD e SHOULDNT
-                    if feature.is_critical:
-                        # Se show_only_unsatisfied, mostra solo quelle non soddisfatte
-                        if show_only_unsatisfied:
-                            # Per SHOULD: mostra se NOT satisfied (mancante)
-                            # Per SHOULDNT: mostra se NOT satisfied (errore presente)
-                            if not assessment.satisfied:
-                                features_to_show.append((feature, assessment))
-                        else:
-                            # Mostra tutto
-                            features_to_show.append((feature, assessment))
+                # Raggruppa features per tipo
+                core_missing = []
+                important_missing = []
+                important_present = []
+                additional_missing = []
+                additional_present = []
                 
-                if features_to_show:
-                    print("  Issues Found:", file=file)
-                    for feature, assessment in features_to_show:
-                        if feature.type == FeatureType.SHOULD:
-                            print(f"    ✗ Missing: {feature.description}", file=file)
-                        else:  # SHOULDNT
-                            print(f"    ✗ Error: {feature.description}", file=file)
+                for feature, assessment in answer.assessment.items():
+                    if feature.type == FeatureType.CORE:
+                        if not assessment.satisfied:
+                            core_missing.append((feature, assessment))
+                    elif feature.type == FeatureType.DETAILS_IMPORTANT:
+                        if not assessment.satisfied:
+                            important_missing.append((feature, assessment))
+                        else:
+                            important_present.append((feature, assessment))
+                    else:  # DETAILS_ADDITIONAL
+                        if not assessment.satisfied:
+                            additional_missing.append((feature, assessment))
+                        else:
+                            additional_present.append((feature, assessment))
+                
+                # Mostra problemi CORE
+                if core_missing:
+                    print("Missing CORE elements:", file=file)
+                    for feature, assessment in core_missing:
+                        print(f"    ✗ {feature.description}", file=file)
                         print(f"        → {assessment.motivation.replace(chr(10), chr(10) + '        → ')}", file=file)
                 else:
-                    if show_only_unsatisfied:
-                        print("  ✓ All critical requirements satisfied!", file=file)
-                    else:
-                        print("  ✓ No issues found", file=file)
+                    print("All CORE elements satisfied!", file=file)
+                
+                # Mostra dettagli solo se richiesto
+                if not show_only_missing_core:
+                    if important_missing or important_present:
+                        print("  Important Details:", file=file)
+                        for feature, assessment in important_present:
+                            print(f"{feature.description}", file=file)
+                        for feature, assessment in important_missing:
+                            print(f"{feature.description}", file=file)
+                            print(f"{assessment.motivation.replace(chr(10), chr(10) + '        → ')}", file=file)
+                    
+                    if additional_missing or additional_present:
+                        print("  Additional Details:", file=file)
+                        for feature, assessment in additional_present:
+                            print(f"{feature.description}", file=file)
+                        for feature, assessment in additional_missing:
+                            print(f"{feature.description}", file=file)
                 
                 # Calcola e mostra punteggio
                 score, breakdown = answer.calculate_score(question.weight)
@@ -297,8 +321,7 @@ def first(iterable):
 
 
 class Assessor(AIOracle):
-    def __init__(self, exam_dir_by_questions: Path, model_name: str = None, model_provider: str = None, 
-                 only_critical_features: bool = True):
+    def __init__(self, exam_dir_by_questions: Path, model_name: str = None, model_provider: str = None):
         """
         Inizializza l'assessor.
         
@@ -306,13 +329,11 @@ class Assessor(AIOracle):
             exam_dir_by_questions: Directory contenente le risposte degli studenti
             model_name: Nome del modello LLM da usare
             model_provider: Provider del modello
-            only_critical_features: Se True, valuta solo SHOULD e SHOULDNT
         """
         super().__init__(model_name, model_provider, FeatureAssessment)
         self.__root = Path(exam_dir_by_questions)
         self.__exam: QuestionsStore = _load_exam(exam_dir_by_questions)
         self.__answers: dict[str, Answer] = {}
-        self.__only_critical = only_critical_features
         
         for question in self.__exam.questions:
             if (cached_answer := load_answer(question)):
@@ -380,24 +401,24 @@ class Assessor(AIOracle):
         self.__save_cache(dir, feature, result, index)
         return result
 
-    def assess_all(self, show_only_unsatisfied: bool = True):
+    def assess_all(self, show_only_missing_core: bool = True):
         """
         Valuta tutte le risposte.
         
         Args:
-            show_only_unsatisfied: Se True, mostra solo problemi (default).
-                                  Se False, mostra tutte le valutazioni.
+            show_only_missing_core: Se True, mostra solo elementi CORE mancanti (default).
+                                   Se False, mostra tutte le valutazioni.
         """
         assessments = TestAssessment()
         
         def log(q):
-            assessments.pretty_print(per_question=q, file=OUTPUT_FILE, show_only_unsatisfied=show_only_unsatisfied)
+            assessments.pretty_print(per_question=q, file=OUTPUT_FILE, show_only_missing_core=show_only_missing_core)
         
         total_features = 0
         evaluated_features = 0
         
         for code, name, question, target, answer, dir in self.__iterate_over_answers(on_question_over=log):
-            for index, feature in enumerate_features(target, only_critical=self.__only_critical):
+            for index, feature in enumerate_features(target):
                 total_features += 1
                 assessment = self.__assess_feature(question, feature, answer, dir, index)
                 assessments.add_assessment(code, name, question, answer, feature, assessment)

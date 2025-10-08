@@ -12,40 +12,35 @@ DIR_SOLUTIONS.mkdir(exist_ok=True)
 
 
 class Answer(BaseModel):
-    should: list[str] = Field(
-        description="List of features that the perfect answer should contain. Each item is a Markdown string line.",
+    core: list[str] = Field(
+        description="Elementi essenziali che devono essere presenti nella risposta perfetta per rispondere alla parte più importante della domanda. Ogni item è una stringa Markdown.",
     )
-    examples: list[str] = Field(
-        description="List of examples that the perfect answer may contain. Each item is a Markdown string line.",
+    details_important: list[str] = Field(
+        description="Dettagli importanti che dovrebbero essere menzionati per arricchire la risposta. Ogni item è una stringa Markdown.",
     )
-    should_not: list[str] = Field(
-        description="List of features that the perfect answer should not contain (e.g. common errors). Each item is a Markdown string line.",
-    )
-    see_also: list[str] = Field(
-        description="List of relevant background/contextual/motivational aspects that should be mentioned in the answer. Each item is a Markdown string line.",
+    details_additional: list[str] = Field(
+        description="Dettagli aggiuntivi opzionali che possono ulteriormente migliorare la risposta. Ogni item è una stringa Markdown.",
     )
 
     def pretty(self, indent=0, prefix="\t") -> str:
-        result = "Should:\n"
-        if self.should:
-            result += "\n".join(f"- {item}" for item in self.should) + "\n"
+        result = "Core (elementi essenziali):\n"
+        if self.core:
+            result += "\n".join(f"- {item}" for item in self.core) + "\n"
         else:
             result += "- <none>\n"
-        result += "Should not:\n"
-        if self.should_not:
-            result += "\n".join(f"- {item}" for item in self.should_not) + "\n"
+        
+        result += "Details - Importanti:\n"
+        if self.details_important:
+            result += "\n".join(f"- {item}" for item in self.details_important) + "\n"
         else:
             result += "- <none>\n"
-        result += "Examples:\n"
-        if self.examples:
-            result += "\n".join(f"- {item}" for item in self.examples) + "\n"
+        
+        result += "Details - Aggiuntivi:\n"
+        if self.details_additional:
+            result += "\n".join(f"- {item}" for item in self.details_additional) + "\n"
         else:
             result += "- <none>\n"
-        result += "Other aspects to be mentioned:\n"
-        if self.see_also:
-            result += "\n".join(f"- {item}" for item in self.see_also) + "\n"
-        else:
-            result += "- <none>\n"
+        
         result = result.strip()
         if indent > 0:
             result = (indent * prefix) + result.replace("\n", "\n" + indent * prefix)
@@ -99,16 +94,14 @@ def load_cache(question: Question) -> Answer | None:
         try:
             cached_answer = safe_load(f)
             return Answer(
-                should=cached_answer.get("should", []),
-                examples=cached_answer.get("examples", []),
-                should_not=cached_answer.get("should_not", []),
-                see_also=cached_answer.get("see_also", []),
+                core=cached_answer.get("core", []),
+                details_important=cached_answer.get("details_important", []),
+                details_additional=cached_answer.get("details_additional", []),
             )
         except Exception as e:
             print(f"# error loading cached answer from {cache_file_path}: {e}")
             cache_file_path.unlink()
             return None
-
 
 class SolutionProvider(AIOracle):
     def __init__(self, model_name: str = None, model_provider: str = None):

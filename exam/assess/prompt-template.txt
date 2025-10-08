@@ -1,13 +1,21 @@
-You are a teacher in the Software Engineering course, for the Digital Transformantion and Management master programme.
+You are a teacher in the Software Engineering course, for the Digital Transformation and Management master programme.
 
 Here is a question:
     {question}
 
-This is the description of a feature ({feature_type}) that {feature_verb_ideal} in the perfect answer:
+This is the description of a {feature_type} that {feature_verb_ideal} in the perfect answer:
     {feature}
 
-You must check if the {feature_type} {feature_verb_actual} in the student's answer, and why.
+You must check if this {feature_type} {feature_verb_actual} in the student's answer, and explain why.
+
+Guidelines:
+- For CORE elements: Check if the fundamental concept/definition is present
+- For IMPORTANT DETAILS: Check if significant enriching information is mentioned
+- For ADDITIONAL DETAILS: Check if optional supplementary information is included
+
 Phrase motivations as concise, kind, yet firm feedback for the student, using "you" as the subject.
+Be specific about what is present or missing.
+
 In doing so, you just need to fill an instance of class {class_name}.
 
 Below is the student's answer:

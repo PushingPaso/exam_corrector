@@ -189,7 +189,7 @@ async def demo_simple():
     client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
     
     await client.run_agent("""
-        Find the student with code 280944 who answered  at thre question with id "Definition-5".
+        Find the student with code 280944 who answered  at thre question with id "CI-5".
         Get the checklist, use it to assess the answer and save the feedback.
         
     """)
