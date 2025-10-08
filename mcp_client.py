@@ -109,12 +109,11 @@ class MCPClientDemo:
         @tool
         async def assess_and_save_feature_tool(
             question_id: str,
-            student_answer: str,
             student_code: str,
         ) -> str:
             """Assess whether a feature is present in a student's answer."""
             return await self.mcp_server.tools["assess_and_save_feature"](
-                question_id, student_answer, student_code
+                question_id, student_code
             )
         langchain_tools.append(assess_and_save_feature_tool)
             
@@ -131,9 +130,9 @@ IMPORTANT: When you need to use a tool, you MUST call it properly using the tool
 Do NOT generate XML or text descriptions of tool calls - actually invoke the tools.
 
 Your capabilities:
-- Read questions
-- find student answers
--Gget feature checklists
+- Get the quesiton by id
+- find student answers by student code
+- get feature checklists
 - Evalute the answear with feature and save feature
 
 Be systematic and thorough. Call tools one at a time and wait for results."""),

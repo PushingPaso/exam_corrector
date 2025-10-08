@@ -236,136 +236,153 @@ class ExamMCPServer:
         
         # Tool 6: assess_feature (con auto-save)
         async def assess_and_save_feature(
-            question_id: str,
-            student_answer: str,
-            student_code: str = None
-        ) -> str:
-            """
-            Assess ALL features of a student answer against the checklist.
-            Automatically saves results if student_code is provided.
-            
-            Args:
-                question_id: The ID of the question
-                student_answer: The student's answer text
-                student_code: Optional student code (if provided, saves results)
-            
-            Returns:
-                JSON string with list of all feature assessments
-            """
-            try:
-                from exam.openai import llm_client
-                from exam.assess import TEMPLATE, enumerate_features
-                from exam.solution import load_cache as load_answer_cache
+                question_id: str,
+                student_code: str
+            ) -> str:
+                """
+                Assess ALL features of a student answer against the checklist.
+                Automatically reads the student's answer and saves results.
                 
-                question = self.questions_store.question(question_id)
-                answer_cache = load_answer_cache(question)
+                Args:
+                    question_id: The ID of the question (e.g., "CI-5")
+                    student_code: The student's code (e.g., "280944")
                 
-                if not answer_cache:
-                    return json.dumps({"error": f"No checklist found for {question_id}"})
-                
-                assessments = []
-                
-                print(f"[TOOL] assess_feature: Evaluating {question_id}...")
-                
-                for index, feature in enumerate_features(answer_cache):
-                    prompt = TEMPLATE.format(
-                        class_name="FeatureAssessment",
-                        question=question.text,
-                        feature_type=feature.type.value,
-                        feature_verb_ideal=feature.verb_ideal,
-                        feature_verb_actual=feature.verb_actual,
-                        feature=feature.description,
-                        answer=student_answer
-                    )
+                Returns:
+                    JSON string with complete assessment including score
+                """
+                try:
+                    from exam.openai import llm_client
+                    from exam.assess import TEMPLATE, enumerate_features
+                    from exam.solution import load_cache as load_answer_cache
                     
-                    llm, _, _ = llm_client(structured_output=FeatureAssessment)
-                    result = llm.invoke(prompt)
+                    # 1. Get question
+                    question = self.questions_store.question(question_id)
                     
-                    assessments.append({
-                        "feature": feature.description,
-                        "feature_type": feature.type.name,
-                        "satisfied": result.satisfied,    
-                        "motivation": result.motivation    
-                    })
-                
-                print(f"[TOOL] assess_feature: Completed {len(assessments)} assessments")
-                
-                # Calcola statistiche per tipo di feature
-                core_count = sum(1 for a in assessments if a["feature_type"] == "CORE")
-                core_satisfied = sum(1 for a in assessments if a["feature_type"] == "CORE" and a["satisfied"])
-                
-                important_count = sum(1 for a in assessments if a["feature_type"] == "DETAILS_IMPORTANT")
-                important_satisfied = sum(1 for a in assessments if a["feature_type"] == "DETAILS_IMPORTANT" and a["satisfied"])
-                
-                additional_count = sum(1 for a in assessments if a["feature_type"] == "DETAILS_ADDITIONAL")
-                additional_satisfied = sum(1 for a in assessments if a["feature_type"] == "DETAILS_ADDITIONAL" and a["satisfied"])
-                
-                # Calcola score come nel sistema assess
-                core_percentage = (core_satisfied / core_count * 0.70) if core_count > 0 else 0.0
-                important_percentage = (important_satisfied / important_count * 0.20) if important_count > 0 else 0.20
-                additional_percentage = (additional_satisfied / additional_count * 0.10) if additional_count > 0 else 0.10
-                
-                final_percentage = core_percentage + important_percentage + additional_percentage
-                estimated_score = round(final_percentage * question.weight, 2)
-                
-                result = {
-                    "question_id": question_id,
-                    "question_text": question.text,
-                    "assessments": assessments,
-                    "statistics": {
-                        "total_features": len(assessments),
-                        "core": {
-                            "total": core_count,
-                            "satisfied": core_satisfied,
-                            "percentage": round((core_satisfied / core_count * 100) if core_count > 0 else 0, 1)
-                        },
-                        "details_important": {
-                            "total": important_count,
-                            "satisfied": important_satisfied,
-                            "percentage": round((important_satisfied / important_count * 100) if important_count > 0 else 0, 1)
-                        },
-                        "details_additional": {
-                            "total": additional_count,
-                            "satisfied": additional_satisfied,
-                            "percentage": round((additional_satisfied / additional_count * 100) if additional_count > 0 else 0, 1)
-                        }
-                    },
-                    "estimated_score": {
-                        "score": estimated_score,
-                        "max_score": question.weight,
-                        "percentage": round(final_percentage * 100, 1),
-                        "breakdown": f"Core: {core_satisfied}/{core_count} (70%) + Important: {important_satisfied}/{important_count} (20%) + Additional: {additional_satisfied}/{additional_count} (10%)"
-                    }
-                }
-                
-                # Auto-save if student_code provided
-                if student_code and self.exam_dir:
-                    try:
-                        pattern = f"Q* - {question_id}/{student_code} - *"
-                        matching_dirs = list(self.exam_dir.glob(pattern))
+                    # 2. Get checklist
+                    answer_cache = load_answer_cache(question)
+                    if not answer_cache:
+                        return json.dumps({"error": f"No checklist found for {question_id}"})
+                    
+                    # 3. Read student answer from file
+                    if not self.exam_dir:
+                        return json.dumps({"error": "No exam directory configured"})
+                    
+                    pattern = f"Q* - {question_id}/{student_code} - *"
+                    matching_dirs = list(self.exam_dir.glob(pattern))
+                    
+                    if not matching_dirs:
+                        return json.dumps({"error": f"No answer found for student {student_code} on question {question_id}"})
+                    
+                    student_dir = matching_dirs[0]
+                    answer_file = next(student_dir.glob("Attempt*_textresponse"), None)
+                    
+                    if not answer_file:
+                        return json.dumps({"error": "Answer file not found"})
+                    
+                    student_answer = answer_file.read_text(encoding="utf-8")
+                    student_name = student_dir.name.split(" - ")[1] if " - " in student_dir.name else "Unknown"
+                    
+                    print(f"[TOOL] assess_feature: Evaluating {question_id} for student {student_code}...")
+                    print(f"[TOOL] assess_feature: Answer length: {len(student_answer)} chars")
+                    
+                    # 4. Assess each feature
+                    assessments = []
+                    
+                    for index, feature in enumerate_features(answer_cache):
+                        prompt = TEMPLATE.format(
+                            class_name="FeatureAssessment",
+                            question=question.text,
+                            feature_type=feature.type.value,
+                            feature_verb_ideal=feature.verb_ideal,
+                            feature_verb_actual=feature.verb_actual,
+                            feature=feature.description,
+                            answer=student_answer  # ✅ Ora usa la risposta vera!
+                        )
                         
-                        if matching_dirs:
-                            student_dir = matching_dirs[0]
-                            summary_file = student_dir / "assessment_summary.json"
-                            
-                            with open(summary_file, "w", encoding="utf-8") as f:
-                                json.dump(result, f, indent=2, ensure_ascii=False)
-                            
-                            print(f"[TOOL] assess_feature: Auto-saved to {summary_file}")
-                            result["saved_to"] = str(summary_file)
+                        llm, _, _ = llm_client(structured_output=FeatureAssessment)
+                        result = llm.invoke(prompt)
+                        
+                        assessments.append({
+                            "feature": feature.description,
+                            "feature_type": feature.type.name,
+                            "satisfied": result.satisfied,
+                            "motivation": result.motivation
+                        })
+                    
+                    print(f"[TOOL] assess_feature: Completed {len(assessments)} assessments")
+                    
+                    # 5. Calculate statistics
+                    core_count = sum(1 for a in assessments if a["feature_type"] == "CORE")
+                    core_satisfied = sum(1 for a in assessments if a["feature_type"] == "CORE" and a["satisfied"])
+                    
+                    important_count = sum(1 for a in assessments if a["feature_type"] == "DETAILS_IMPORTANT")
+                    important_satisfied = sum(1 for a in assessments if a["feature_type"] == "DETAILS_IMPORTANT" and a["satisfied"])
+                    
+                    additional_count = sum(1 for a in assessments if a["feature_type"] == "DETAILS_ADDITIONAL")
+                    additional_satisfied = sum(1 for a in assessments if a["feature_type"] == "DETAILS_ADDITIONAL" and a["satisfied"])
+                    
+                    # Calculate score
+                    core_percentage = (core_satisfied / core_count * 0.70) if core_count > 0 else 0.0
+                    important_percentage = (important_satisfied / important_count * 0.20) if important_count > 0 else 0.20
+                    additional_percentage = (additional_satisfied / additional_count * 0.10) if additional_count > 0 else 0.10
+                    
+                    final_percentage = core_percentage + important_percentage + additional_percentage
+                    estimated_score = round(final_percentage * question.weight, 2)
+                    
+                    # 6. Build result
+                    result = {
+                        "question_id": question_id,
+                        "question_text": question.text,
+                        "student_code": student_code,
+                        "student_name": student_name,
+                        "assessments": assessments,
+                        "statistics": {
+                            "total_features": len(assessments),
+                            "core": {
+                                "total": core_count,
+                                "satisfied": core_satisfied,
+                                "percentage": round((core_satisfied / core_count * 100) if core_count > 0 else 0, 1)
+                            },
+                            "details_important": {
+                                "total": important_count,
+                                "satisfied": important_satisfied,
+                                "percentage": round((important_satisfied / important_count * 100) if important_count > 0 else 0, 1)
+                            },
+                            "details_additional": {
+                                "total": additional_count,
+                                "satisfied": additional_satisfied,
+                                "percentage": round((additional_satisfied / additional_count * 100) if additional_count > 0 else 0, 1)
+                            }
+                        },
+                        "estimated_score": {
+                            "score": estimated_score,
+                            "max_score": question.weight,
+                            "percentage": round(final_percentage * 100, 1),
+                            "breakdown": f"Core: {core_satisfied}/{core_count} (70%) + Important: {important_satisfied}/{important_count} (20%) + Additional: {additional_satisfied}/{additional_count} (10%)"
+                        }
+                    }
+                    
+                    # 7. Auto-save
+                    try:
+                        summary_file = student_dir / "assessment_summary.json"
+                        with open(summary_file, "w", encoding="utf-8") as f:
+                            json.dump(result, f, indent=2, ensure_ascii=False)
+                        
+                        print(f"[TOOL] assess_feature: Auto-saved to {summary_file}")
+                        result["saved_to"] = str(summary_file)
                     except Exception as e:
                         print(f"[TOOL] assess_feature: Auto-save failed: {e}")
-                
-                return json.dumps(result, indent=2, ensure_ascii=False)
-                
-            except Exception as e:
-                import traceback
-                error_details = traceback.format_exc()
-                print(f"[ERROR] assess_feature: {error_details}")
-                return json.dumps({
-                    "error": str(e),
-                    "details": error_details
-                })
+                    
+                    return json.dumps(result, indent=2, ensure_ascii=False)
+                    
+                except Exception as e:
+                    import traceback
+                    error_details = traceback.format_exc()
+                    print(f"[ERROR] assess_feature: {error_details}")
+                    return json.dumps({
+                        "error": str(e),
+                        "details": error_details
+                    })
 
         tools["assess_and_save_feature"] = assess_and_save_feature
 
