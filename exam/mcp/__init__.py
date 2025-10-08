@@ -241,7 +241,7 @@ class ExamMCPServer:
             Returns:
                 Complete assessment with score breakdown
             """
-            from exam.openai import llm_client
+            from exam.llm_provider import llm_client
             from exam.assess import TEMPLATE
             
             # Ensure answer is loaded

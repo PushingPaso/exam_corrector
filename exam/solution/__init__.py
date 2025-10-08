@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
 from exam import DIR_ROOT, Question
-from exam.openai import AIOracle
+from exam.llm_provider import AIOracle
 from exam.rag import sqlite_vector_store
 from yaml import safe_dump, safe_load
 

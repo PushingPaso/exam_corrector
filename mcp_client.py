@@ -5,7 +5,7 @@ MCP Client con sistema di tool collaborativi.
 import asyncio
 import json
 from pathlib import Path
-from langchain_groq import ChatGroq
+from exam.llm_provider import llm_client
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
@@ -18,27 +18,10 @@ from exam.mcp import ExamMCPServer
 class MCPClientDemo:
     """Client con sistema di tool collaborativi."""
     
-    def __init__(self, exam_dir: Path = None, model: str = "llama-3.3"):
+    def __init__(self, exam_dir: Path = None):
         self.mcp_server = ExamMCPServer(exam_dir)
         
-        if not os.environ.get("GROQ_API_KEY"):
-            raise ValueError("GROQ_API_KEY not set!")
-        
-        model_configs = {
-            "llama-3.3": "llama-3.3-70b-versatile",
-            "llama-3.1": "llama-3.1-70b-versatile",
-            "mixtral": "mixtral-8x7b-32768",
-            "llama-8b": "llama-3.1-8b-instant"
-        }
-        
-        model_name = model_configs.get(model, model_configs["llama-3.3"])
-        
-        self.llm = ChatGroq(
-            model=model_name,
-            groq_api_key=os.environ.get("GROQ_API_KEY"),
-            temperature=0.1,
-            max_tokens=8000,
-        )
+        self.llm,_,_ = llm_client()
         
         self.langchain_tools = self._create_langchain_tools()
     
@@ -208,7 +191,7 @@ async def demo_simple():
     print("\nDEMO 1: Quick Assessment (Composed Tool)")
     print("="*70)
     
-    client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
+    client = MCPClientDemo(Path("mock_exam_submissions"))
     
     await client.run_agent("""
        
@@ -222,7 +205,7 @@ async def demo_compare():
     print("\nDEMO 2: Compare Students (Atomic Tools)")
     print("="*70)
     
-    client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
+    client = MCPClientDemo(Path("mock_exam_submissions"))
     
     await client.run_agent("""
         Compare the first 2 students who answered CI-5:
@@ -238,7 +221,7 @@ async def demo_batch():
     print("\nDEMO 3: Batch Assessment")
     print("="*70)
     
-    client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
+    client = MCPClientDemo(Path("mock_exam_submissions"))
     
     await client.run_agent("""
         Assess ALL students who answered CI-5:

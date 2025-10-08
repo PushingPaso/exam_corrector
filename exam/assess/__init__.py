@@ -1,5 +1,5 @@
 from exam import QuestionsStore, Question, DIR_ROOT
-from exam.openai import AIOracle
+from exam.llm_provider import AIOracle
 from exam.solution import Answer, load_cache as load_answer
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -281,8 +281,8 @@ class TestAssessment:
                 if core_missing:
                     print("Missing CORE elements:", file=file)
                     for feature, assessment in core_missing:
-                        print(f"    ✗ {feature.description}", file=file)
-                        print(f"        → {assessment.motivation.replace(chr(10), chr(10) + '        → ')}", file=file)
+                        print(f"{feature.description}", file=file)
+                        print(f"{assessment.motivation.replace(chr(10), chr(10) + '        → ')}", file=file)
                 else:
                     print("All CORE elements satisfied!", file=file)
                 
@@ -384,7 +384,7 @@ class Assessor(AIOracle):
     def __assess_feature(self, question: Question, feature: Feature, answer: str, dir: Path, index: int) -> FeatureAssessment:
         cached_assessment = self.__load_cache(dir, feature, index)
         if cached_assessment:
-            print(f"# loaded cached assessment for {feature.type.name} from {dir}")
+            print(f"loaded cached assessment for {feature.type.name} from {dir}")
             return cached_assessment
         prompt = TEMPLATE.format(
             class_name=FeatureAssessment.__name__,

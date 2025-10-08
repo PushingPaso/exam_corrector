@@ -137,7 +137,7 @@ celerybeat.pid
 # Environments
 .env
 mock_exam_submissions/
-static/se-exams-questions-grades-responses/
+static/se-exams/
 CLAUDE.md
 solutions/
 .envrc
