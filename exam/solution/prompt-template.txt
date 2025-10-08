@@ -4,7 +4,7 @@ Your task is to create a structured checklist for evaluating student answers to 
 
 For each question, you should identify:
 
-1. **Core** - The essential elements or element that MUST be present in a perfect answer to address the most important part of the question. These are the fundamental concepts, definitions, or explanations that directly answer what is being asked.
+1. **Core** - The essential element or elements that MUST be present in a perfect answer to address the most important part of the question. These are the fundamental concepts, definitions, or explanations that directly answer what is being asked.
 
 2. **Important Details** - Significant additional details that should be mentioned to enrich the answer. These go beyond the core but are important for a complete understanding.
 
