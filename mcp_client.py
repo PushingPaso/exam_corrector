@@ -1,10 +1,9 @@
 """
-MCP Client using Groq 
+MCP Client con sistema di tool collaborativi.
 """
 
 import asyncio
 import json
-from exam import Question
 from pathlib import Path
 from langchain_groq import ChatGroq
 from langchain.agents import AgentExecutor, create_tool_calling_agent
@@ -12,67 +11,39 @@ from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
 import os
 
-# Import MCP server
+# Import MCP server aggiornato
 from exam.mcp import ExamMCPServer
 
 
 class MCPClientDemo:
-    """Client using Groq's"""
+    """Client con sistema di tool collaborativi."""
     
-    def __init__(self, exam_dir: Path = None, model: str = "llama-3.1"):
-
+    def __init__(self, exam_dir: Path = None, model: str = "llama-3.3"):
         self.mcp_server = ExamMCPServer(exam_dir)
         
-        # Check API key
         if not os.environ.get("GROQ_API_KEY"):
-            raise ValueError(
-                "GROQ_API_KEY not set!\n"
-                "Get a free key at: https://console.groq.com/keys\n"
-                "Then: export GROQ_API_KEY='gsk_...'"
-            )
+            raise ValueError("GROQ_API_KEY not set!")
         
-        # Model configurations
         model_configs = {
-            "llama-3.3": {
-                "name": "llama-3.3-70b-versatile",
-                "display": "Llama 3.3 70B Versatile",
-                "max_tokens": 8000
-            },
-            "llama-3.1": {
-                "name": "llama-3.1-70b-versatile",
-                "display": "Llama 3.1 70B Versatile",
-                "max_tokens": 8000
-            },
-            "mixtral": {
-                "name": "mixtral-8x7b-32768",
-                "display": "Mixtral 8x7B",
-                "max_tokens": 8000
-            },
-            "llama-8b": {
-                "name": "llama-3.1-8b-instant",
-                "display": "Llama 3.1 8B Instant (Fastest)",
-                "max_tokens": 8000
-            }
+            "llama-3.3": "llama-3.3-70b-versatile",
+            "llama-3.1": "llama-3.1-70b-versatile",
+            "mixtral": "mixtral-8x7b-32768",
+            "llama-8b": "llama-3.1-8b-instant"
         }
         
-        if model not in model_configs:
-            print(f"  Unknown model '{model}', using llama-3.3")
-            model = "llama-3.3"
+        model_name = model_configs.get(model, model_configs["llama-3.3"])
         
-        config = model_configs[model]
-        
-        # Initialize Groq LLM
         self.llm = ChatGroq(
-            model=config["name"],
+            model=model_name,
             groq_api_key=os.environ.get("GROQ_API_KEY"),
             temperature=0.1,
-            max_tokens=config["max_tokens"],
+            max_tokens=8000,
         )
         
         self.langchain_tools = self._create_langchain_tools()
     
     def _create_langchain_tools(self):
-        """Wrap MCP tools as LangChain tools."""
+        """Crea i wrapper LangChain per tutti i tool."""
         
         langchain_tools = []
         
@@ -83,64 +54,118 @@ class MCPClientDemo:
         langchain_tools.append(list_questions_tool)
         
         @tool
-        async def get_question_tool(question_id: str) -> str:
-            """Get details of a specific question by ID."""
-            return await self.mcp_server.tools["get_question"](question_id)
-        langchain_tools.append(get_question_tool)
-        
-        @tool
         async def list_students_tool(question_id: str = None) -> str:
             """List all students who submitted answers, optionally filtered by question."""
             return await self.mcp_server.tools["list_students"](question_id)
         langchain_tools.append(list_students_tool)
         
         @tool
-        async def read_student_answer_tool(question_id: str, student_code: str) -> str:
-            """Read a specific student's answer to a question."""
-            return await self.mcp_server.tools["read_student_answer"](question_id, student_code)
-        langchain_tools.append(read_student_answer_tool)
-        
-        @tool
-        async def get_checklist_tool(question_id: str) -> str:
-            """Get the assessment checklist for a specific question."""
-            return await self.mcp_server.tools["get_checklist"](question_id)
-        langchain_tools.append(get_checklist_tool)
-        
-        @tool
-        async def assess_and_save_feature_tool(
-            question_id: str,
-            student_code: str,
-        ) -> str:
-            """Assess whether a feature is present in a student's answer."""
-            return await self.mcp_server.tools["assess_and_save_feature"](
-                question_id, student_code
-            )
-        langchain_tools.append(assess_and_save_feature_tool)
+        async def load_student_answer_tool(question_id: str, student_code: str) -> str:
+            """
+            Load a student's answer into memory.
+            The answer will be available for other tools to use.
             
+            Use this when you need to:
+            - Read an answer before assessing it
+            - Compare multiple answers (load each one)
+            - Prepare for assessment
+            """
+            return await self.mcp_server.tools["load_student_answer"](question_id, student_code)
+        langchain_tools.append(load_student_answer_tool)
+        
+        @tool
+        async def load_checklist_tool(question_id: str) -> str:
+            """
+            Load the assessment checklist for a question into memory.
+            The checklist will be available for other tools to use.
+            
+            Use this when you need to:
+            - See what features will be assessed
+            - Prepare for assessing multiple students on the same question
+            - Understand the grading criteria
+            """
+            return await self.mcp_server.tools["load_checklist"](question_id)
+        langchain_tools.append(load_checklist_tool)
+        
+        @tool
+        async def calculate_score_tool(question_id: str, student_code: str) -> str:
+            """
+            Calculate final score from stored assessments.
+            Requires that assess_all_features has been run first.
+            
+            Use this to:
+            - Get the final score
+            - See the breakdown by feature type
+            - Understand how the score was calculated
+            """
+            return await self.mcp_server.tools["calculate_score"](question_id, student_code)
+        langchain_tools.append(calculate_score_tool)
+        
+        @tool
+        async def assess_all_features_tool(question_id: str, student_code: str) -> str:
+            """
+            Assess ALL features for a student's answer in one step.
+            Automatically loads answer and checklist if needed.
+            
+            This is the FASTEST way to get a complete assessment.
+            
+            Use this when you need:
+            - Quick complete assessment
+            - Full score breakdown
+            - All feature evaluations at once
+            
+            Returns: Complete assessment with score and all feature feedback.
+            """
+            return await self.mcp_server.tools["assess_all_features"](question_id, student_code)
+        langchain_tools.append(assess_all_features_tool)
+        
         return langchain_tools
     
     async def run_agent(self, task: str, verbose: bool = True):
         """Run the agent with a given task."""
         
-        # Create agent prompt
         prompt = ChatPromptTemplate.from_messages([
-    ("system", """You are an exam assessment assistant with access to tools.
-
-IMPORTANT: When you need to use a tool, you MUST call it properly using the tool calling mechanism.
+            ("system", """You are an exam assessment assistant with ATOMIC and COMPOSED tools.
+             
+             IMPORTANT: When you need to use a tool, you MUST call it properly using the tool calling mechanism.
 Do NOT generate XML or text descriptions of tool calls - actually invoke the tools.
 
-Your capabilities:
-- Get the quesiton by id
-- find student answers by student code
-- get feature checklists
-- Evalute the answear with feature and save feature
+ATOMIC TOOLS (building blocks):
+- list_questions: See all questions
+- list_students: See all students
+- load_student_answer: Load an answer into memory
+- load_checklist: Load grading criteria into memory
+- calculate_score: Get final score (needs assessments done)
 
-Be systematic and thorough. Call tools one at a time and wait for results."""),
-    ("user", "{input}"),
-    ("assistant", "{agent_scratchpad}"),
-])
+COMPOSED TOOLS:
+- assess_all_features: Complete assessment in one step (assesses all, calculates score)
+
+WORKFLOW STRATEGIES:
+
+             
+  Example: "Assess student 280944 on CI-5"
+
+-> load_student_answer("CI-5", "280944")
+-> load_checklist("CI-5")
+-> assess_all_features("CI-5", "280944")
+
+For comparing students: Load checklist once, then assess each
+  Example: "Compare students on CI-5"
+  -> load_checklist("CI-5")
+  -> assess_all_features("CI-5", "280944")
+  -> assess_all_features("CI-5", "280945")
+
+For batch assessment: Load checklist once, assess all students
+  Example: "Assess all students on CI-5"
+  -> load_checklist("CI-5")
+  -> list_students("CI-5")
+  -> assess_all_features for each student
+
+Be systematic. Choose the right tool for the task.Call tools one at a time and wait for results"""),
+            ("user", "{input}"),
+            ("assistant", "{agent_scratchpad}"),
+        ])
         
-        # Create agent
         agent = create_tool_calling_agent(self.llm, self.langchain_tools, prompt)
         agent_executor = AgentExecutor(
             agent=agent,
@@ -152,7 +177,6 @@ Be systematic and thorough. Call tools one at a time and wait for results."""),
             handle_parsing_errors=True
         )
         
-        # Run agent
         print("\n" + "="*70)
         print(f"TASK: {task}")
         print("="*70 + "\n")
@@ -162,95 +186,94 @@ Be systematic and thorough. Call tools one at a time and wait for results."""),
         
         try:
             result = await agent_executor.ainvoke({"input": task})
-            
             elapsed = time.time() - start
             
             print("\n" + "="*70)
             print("RESULT:")
             print("="*70)
             print(result["output"])
-            print(f"\n  Completed in {elapsed:.2f} seconds")
-            print("\n")
+            print(f"\nCompleted in {elapsed:.2f} seconds")
+            print("="*70 + "\n")
             
             return result
         except Exception as e:
-            print(f"\n Error: {e}")
+            print(f"\nError: {e}")
             import traceback
             traceback.print_exc()
             return None
 
 
 async def demo_simple():
-    """Demo 1: Simple assessment."""
-    print("\n DEMO 1: Simple Student Assessment")
+    """Demo 1: Quick assessment using composed tool."""
+    print("\nDEMO 1: Quick Assessment (Composed Tool)")
     print("="*70)
     
     client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
     
     await client.run_agent("""
-        Find the student with code 280944 who answered  at thre question with id "CI-5".
+       
+       Find the student with code 280944 who answered  at thre question with id "CI-5".
         Get the checklist, use it to assess the answer and save the feedback.
-        
     """)
 
 
 async def demo_compare():
-    """Demo 2: Compare students."""
-    print("\n DEMO 2: Compare Students")
+    """Demo 2: Compare students using atomic tools."""
+    print("\nDEMO 2: Compare Students (Atomic Tools)")
     print("="*70)
     
     client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
     
     await client.run_agent("""
-        Find the first 2 students who answered Foundations-1.
-        Assess both and tell me who did better and why.
+        Compare the first 2 students who answered CI-5:
+        1. Load the checklist once (reuse it)
+        2. Assess both students
+        3. Tell me who scored better and why
+        4. Focus especially on CORE features
     """)
 
 
-async def demo_rag():
-    """Demo 3: RAG-enhanced."""
-    print("\n DEMO 3: RAG-Enhanced Assessment")
+async def demo_batch():
+    """Demo 3: Batch assessment."""
+    print("\nDEMO 3: Batch Assessment")
     print("="*70)
     
     client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
     
     await client.run_agent("""
-        Before assessing a student on Foundations-2:
-        1. Search course materials for "algorithm"
-        2. Use that context to assess the student's answer
-        3. In feedback, cite specific course materials to review
+        Assess ALL students who answered CI-5:
+        1. Find all students
+        2. Load checklist once
+        3. Assess each student completely
+        4. Create a ranking by score
+        5. Show me the top 3
     """)
 
 
 async def main():
+    """Main menu."""
     
-    # Check prerequisites
     if not Path("mock_exam_submissions").exists():
-        print("\n  No mock exam data!")
-        print("Run: python generate_mock_exam.py")
+        print("\nNo mock exam data! Run: python generate_mock_exam.py")
         return
     
     if not os.environ.get("GROQ_API_KEY"):
-        print("\n  GROQ_API_KEY not set!")
-        print("\n1. Go to: https://console.groq.com/keys")
-        print("2. Sign up (free)")
-        print("3. Create API key")
-        print("4. export GROQ_API_KEY='gsk_...'")
+        print("\nGROQ_API_KEY not set!")
+        print("Get free key at: https://console.groq.com/keys")
         return
     
-    print("\n API Key configured")
+    print("\nReady to run demos!")
     
-    # Demos
     demos = [
-        ("Simple Assessment", demo_simple),
+        ("Quick Assessment", demo_simple),
         ("Compare Students", demo_compare),
-        ("RAG-Enhanced", demo_rag),
+        ("Batch Assessment", demo_batch),
     ]
     
     print("\nAvailable demos:")
     for i, (name, _) in enumerate(demos, 1):
-        print(f"{i}. {name}")
-    print("0. Run all")
+        print(f"  {i}. {name}")
+    print("  0. Run all")
     
     choice = input("\nSelect (0-3): ").strip()
     
