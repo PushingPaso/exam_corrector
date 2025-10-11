@@ -5,7 +5,7 @@ MCP Client con sistema di tool collaborativi.
 import asyncio
 import json
 from pathlib import Path
-from exam.llm_provider import llm_client
+from langchain_groq import ChatGroq
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
@@ -18,10 +18,27 @@ from exam.mcp import ExamMCPServer
 class MCPClientDemo:
     """Client con sistema di tool collaborativi."""
     
-    def __init__(self, exam_dir: Path = None):
+    def __init__(self, exam_dir: Path = None, model: str = "llama-3.3"):
         self.mcp_server = ExamMCPServer(exam_dir)
         
-        self.llm,_,_ = llm_client()
+        if not os.environ.get("GROQ_API_KEY"):
+            raise ValueError("GROQ_API_KEY not set!")
+        
+        model_configs = {
+            "llama-3.3": "llama-3.3-70b-versatile",
+            "llama-3.1": "llama-3.1-70b-versatile",
+            "mixtral": "mixtral-8x7b-32768",
+            "llama-8b": "llama-3.1-8b-instant"
+        }
+        
+        model_name = model_configs.get(model, model_configs["llama-3.3"])
+        
+        self.llm = ChatGroq(
+            model=model_name,
+            groq_api_key=os.environ.get("GROQ_API_KEY"),
+            temperature=0.1,
+            max_tokens=8000,
+        )
         
         self.langchain_tools = self._create_langchain_tools()
     
@@ -102,6 +119,66 @@ class MCPClientDemo:
             return await self.mcp_server.tools["assess_all_features"](question_id, student_code)
         langchain_tools.append(assess_all_features_tool)
         
+        # BATCH TOOLS
+        
+        @tool
+        async def list_available_exams_tool() -> str:
+            """
+            List all available exam YAML files in static/se-exams directory.
+            
+            Use this to discover which exams are available for correction.
+            Shows exam pairs (questions + responses files) and their status.
+            """
+            return await self.mcp_server.tools["list_available_exams"]()
+        langchain_tools.append(list_available_exams_tool)
+        
+        @tool
+        async def load_exam_from_yaml_tool(questions_file: str, responses_file: str) -> str:
+            """
+            Load an entire exam from YAML files in static/se-exams directory.
+            
+            Args:
+                questions_file: Filename only (e.g., "se-2025-06-05-questions.yml")
+                responses_file: Filename only (e.g., "se-2025-06-05-responses.yml")
+            
+            Files are automatically searched in static/se-exams/ directory.
+            Use list_available_exams to see available files first.
+            """
+            return await self.mcp_server.tools["load_exam_from_yaml"](questions_file, responses_file)
+        langchain_tools.append(load_exam_from_yaml_tool)
+        
+        @tool
+        async def assess_student_exam_tool(student_email: str) -> str:
+            """
+            Assess all responses for a single student from a loaded exam.
+            Requires load_exam_from_yaml to be called first.
+            
+            Args:
+                student_email: Student's email (can use first 20 characters)
+            
+            Returns complete assessment of all the student's exam responses.
+            """
+            return await self.mcp_server.tools["assess_student_exam"](student_email)
+        langchain_tools.append(assess_student_exam_tool)
+        
+        @tool
+        async def assess_full_exam_tool(questions_file: str, responses_file: str, max_students: int = None) -> str:
+            """
+            Assess an ENTIRE exam for ALL students automatically.
+            
+            This is the COMPLETE automation tool - loads the exam and assesses everyone.
+            
+            Args:
+                questions_file: Path to questions YAML
+                responses_file: Path to responses YAML
+                max_students: Optional limit for testing (e.g., 3 for first 3 students)
+            
+            Returns summary with statistics and results for all students.
+            Perfect for automatic exam correction.
+            """
+            return await self.mcp_server.tools["assess_full_exam"](questions_file, responses_file, max_students)
+        langchain_tools.append(assess_full_exam_tool)
+        
         return langchain_tools
     
     async def run_agent(self, task: str, verbose: bool = True):
@@ -110,7 +187,7 @@ class MCPClientDemo:
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are an exam assessment assistant with ATOMIC and COMPOSED tools.
              
-             IMPORTANT: When you need to use a tool, you MUST call it properly using the tool calling mechanism.
+              IMPORTANT: When you need to use a tool, you MUST call it properly using the tool calling mechanism.
 Do NOT generate XML or text descriptions of tool calls - actually invoke the tools.
 
 ATOMIC TOOLS (building blocks):
@@ -120,31 +197,41 @@ ATOMIC TOOLS (building blocks):
 - load_checklist: Load grading criteria into memory
 - calculate_score: Get final score (needs assessments done)
 
-COMPOSED TOOLS:
-- assess_all_features: Complete assessment in one step (assesses all, calculates score)
+COMPOSED TOOLS (quick workflows):
+- assess_all_features: Complete assessment in one step (loads everything, assesses all, calculates score)
+
+BATCH EXAM TOOLS (for entire exams from static/se-exams/):
+- list_available_exams: See which exam YAML files are available
+- load_exam_from_yaml: Load questions and responses from YAML files
+- assess_student_exam: Assess all responses for one student from loaded exam
+- assess_full_exam: AUTOMATIC CORRECTION - assess entire exam for all students
+
+IMPORTANT: Exam YAML files are stored in static/se-exams/ directory.
+Just use filenames like "se-2025-06-05-questions.yml", not full paths.
 
 WORKFLOW STRATEGIES:
 
-             
+For single answer assessment:
   Example: "Assess student 280944 on CI-5"
+  -> assess_all_features("CI-5", "280944")
 
--> load_student_answer("CI-5", "280944")
--> load_checklist("CI-5")
--> assess_all_features("CI-5", "280944")
-
-For comparing students: Load checklist once, then assess each
+For comparing students:
   Example: "Compare students on CI-5"
   -> load_checklist("CI-5")
   -> assess_all_features("CI-5", "280944")
   -> assess_all_features("CI-5", "280945")
 
-For batch assessment: Load checklist once, assess all students
-  Example: "Assess all students on CI-5"
-  -> load_checklist("CI-5")
-  -> list_students("CI-5")
-  -> assess_all_features for each student
+For batch exam correction (AUTOMATIC):
+  Example: "What exams are available? Correct the June 2025 exam"
+  -> list_available_exams()
+  -> assess_full_exam("se-2025-06-05-questions.yml", "se-2025-06-05-responses.yml")
 
-Be systematic. Choose the right tool for the task.Call tools one at a time and wait for results"""),
+For single student full exam:
+  Example: "Assess all responses for first student in June 2025 exam"
+  -> load_exam_from_yaml("se-2025-06-05-questions.yml", "se-2025-06-05-responses.yml")
+  -> assess_student_exam("1377db8e05e4...")
+
+Be systematic. Choose the right tool for the task. Call tools one at a time and wait for results"""),
             ("user", "{input}"),
             ("assistant", "{agent_scratchpad}"),
         ])
@@ -191,12 +278,11 @@ async def demo_simple():
     print("\nDEMO 1: Quick Assessment (Composed Tool)")
     print("="*70)
     
-    client = MCPClientDemo(Path("mock_exam_submissions"))
+    client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
     
     await client.run_agent("""
-       
-       Find the student with code 280944 who answered  at thre question with id "CI-5".
-        Get the checklist, use it to assess the answer and save the feedback.
+        Assess student 280944's answer to question CI-5.
+        Use the fastest method.
     """)
 
 
@@ -205,7 +291,7 @@ async def demo_compare():
     print("\nDEMO 2: Compare Students (Atomic Tools)")
     print("="*70)
     
-    client = MCPClientDemo(Path("mock_exam_submissions"))
+    client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
     
     await client.run_agent("""
         Compare the first 2 students who answered CI-5:
@@ -221,7 +307,7 @@ async def demo_batch():
     print("\nDEMO 3: Batch Assessment")
     print("="*70)
     
-    client = MCPClientDemo(Path("mock_exam_submissions"))
+    client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
     
     await client.run_agent("""
         Assess ALL students who answered CI-5:
@@ -230,6 +316,36 @@ async def demo_batch():
         3. Assess each student completely
         4. Create a ranking by score
         5. Show me the top 3
+    """)
+
+
+async def demo_full_exam():
+    """Demo 4: Automatic exam correction from YAML files."""
+    print("\nDEMO 4: Automatic Exam Correction")
+    print("="*70)
+    
+    client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
+    
+    await client.run_agent("""
+        Correct the June 2025 exam automatically:
+        1. First, list available exams to see what we have
+        2. Load se-2025-06-05-questions.yml and se-2025-06-05-responses.yml
+        3. Assess only the first 2 students (for testing)
+        4. Show me statistics and individual results
+    """)
+
+
+async def demo_student_exam():
+    """Demo 5: Assess full exam for one student."""
+    print("\nDEMO 5: Single Student Full Exam Assessment")
+    print("="*70)
+    
+    client = MCPClientDemo(Path("mock_exam_submissions"), model="llama-3.3")
+    
+    await client.run_agent("""
+        Assess one student's entire exam:
+        Load the se-2025-06-05 exam files, find the first student and assess all his 9 responses
+        show me his total score and which questions they did well/poorly on.
     """)
 
 
@@ -251,6 +367,8 @@ async def main():
         ("Quick Assessment", demo_simple),
         ("Compare Students", demo_compare),
         ("Batch Assessment", demo_batch),
+        ("Automatic Exam Correction", demo_full_exam),
+        ("Single Student Full Exam", demo_student_exam),
     ]
     
     print("\nAvailable demos:")
@@ -258,14 +376,14 @@ async def main():
         print(f"  {i}. {name}")
     print("  0. Run all")
     
-    choice = input("\nSelect (0-3): ").strip()
+    choice = input("\nSelect (0-5): ").strip()
     
     try:
         if choice == "0":
             for name, func in demos:
                 await func()
                 input("\n[Press Enter for next demo...]")
-        elif choice in ["1", "2", "3"]:
+        elif choice in ["1", "2", "3", "4", "5"]:
             await demos[int(choice)-1][1]()
         else:
             print("Invalid choice")
