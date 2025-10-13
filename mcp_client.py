@@ -3,14 +3,13 @@ MCP Client con sistema di tool collaborativi.
 """
 
 import asyncio
-import json
+import os
 from pathlib import Path
-from exam.llm_provider import llm_client
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
-import os
 
+from exam.llm_provider import llm_client
 # Import MCP server aggiornato
 from exam.mcp import ExamMCPServer
 
@@ -212,7 +211,7 @@ async def demo_simple():
     client = MCPClientDemo(Path("mock_exam_submissions"))
     
     await client.run_agent("""
-        Assess and evaluate student 280944's answer to question DistributedSystems-30.
+        Load the answear and then checklist of the student 204293 to question Testing-12 using tool and evaluate it.
     """)
 
 async def demo_full_exam():

@@ -6,6 +6,8 @@ __pycache__/
 # C extensions
 *.so
 
+#embeddings-DB
+slides-rag.db
 # Distribution / packaging
 .Python
 build/
@@ -116,7 +118,7 @@ ipython_config.py
 #pdm.toml
 .pdm-python
 .pdm-build/
-
+.idea
 # pixi
 #   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
 #pixi.lock

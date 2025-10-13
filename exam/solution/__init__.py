@@ -104,7 +104,7 @@ def load_cache(question: Question) -> Answer | None:
             return None
 
 class SolutionProvider(AIOracle):
-    def __init__(self, model_name: str = None, model_provider: str = None):
+    def __init__(self, model_name: str = None, model_provider: str = "bge-large"):
         super().__init__(model_name, model_provider, Answer)
         self.__vector_store = sqlite_vector_store()
         self.__use_helps = self.__vector_store.get_dimensionality() > 0
