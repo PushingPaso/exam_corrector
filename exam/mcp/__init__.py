@@ -66,6 +66,10 @@ class ExamMCPServer:
         self.questions_store = get_questions_store()
         self.context = AssessmentContext()
         self.context.loaded_exams = {}  # For batch exam processing
+
+        from exam import DIR_ROOT
+        self.evaluations_dir = DIR_ROOT / "evaluations"
+        self.evaluations_dir.mkdir(parents=True, exist_ok=True)
         
         # Directory for YAML exam files
         from exam import DIR_ROOT
@@ -73,59 +77,12 @@ class ExamMCPServer:
         self.exams_dir.mkdir(parents=True, exist_ok=True)
         
         self.tools = self._create_tools()
-        self.tools.update(self._create_batch_tools())
     
     def _create_tools(self):
         """Create all available tools."""
         tools = {}
         
-        # TOOL 1: List Questions
-        async def list_questions() -> str:
-            """List all available questions in the question bank."""
-            questions = []
-            for q in self.questions_store.questions:
-                questions.append({
-                    "id": q.id,
-                    "category": q.category.name,
-                    "text": q.text,
-                    "weight": q.weight
-                })
-            return json.dumps(questions, indent=2)
-        
-        tools["list_questions"] = list_questions
-        
-        # TOOL 2: List Students
-        async def list_students(question_id: str = None) -> str:
-            """List all students who submitted answers."""
-            if not self.exam_dir:
-                return json.dumps({"error": "No exam directory configured"})
-            
-            students = {}
-            pattern = f"Q* - {question_id}/*" if question_id else "Q*/*"
-            
-            for student_dir in self.exam_dir.glob(pattern):
-                if student_dir.is_dir() and " - " in student_dir.name:
-                    parts = student_dir.name.split(" - ")
-                    if len(parts) >= 2:
-                        code = parts[0]
-                        name = parts[1]
-                        
-                        question_folder = student_dir.parent.name
-                        q_id = question_folder.split(" - ")[1] if " - " in question_folder else "unknown"
-                        
-                        if code not in students:
-                            students[code] = {
-                                "code": code,
-                                "name": name,
-                                "questions": []
-                            }
-                        students[code]["questions"].append(q_id)
-            
-            return json.dumps(list(students.values()), indent=2)
-        
-        tools["list_students"] = list_students
-        
-        # TOOL 3: Load Student Answer (ATOMICO)
+        # TOOL: Load Student Answer (ATOMICO)
         async def load_student_answer(question_id: str, student_code: str) -> str:
             """
             Load a student's answer into memory.
@@ -184,7 +141,7 @@ class ExamMCPServer:
         
         tools["load_student_answer"] = load_student_answer
         
-        # TOOL 4: Load Checklist (ATOMICO)
+        # TOOL: Load Checklist (ATOMICO)
         async def load_checklist(question_id: str) -> str:
             """
             Load the assessment checklist for a question into memory.
@@ -236,21 +193,23 @@ class ExamMCPServer:
         
         tools["load_checklist"] = load_checklist
         
-        # TOOL 5: Assess All Features (COMPOSTO)
+        # TOOL : Assess All Features
         async def assess_all_features(question_id: str, student_code: str) -> str:
             """
-            Assess ALL features for a student's answer.
-            Automatically loads answer and checklist if needed, then evaluates all features.
+            Assess ALL features for a student's answer in one step.
+            Automatically loads answer and checklist if needed.
             
-            Args:
-                question_id: The question ID (e.g., "CI-5")
-                student_code: The student code (e.g., "280944")
+            This is the FASTEST way to get a complete assessment.
             
-            Returns:
-                Complete assessment with score breakdown
+            Use this when you need:
+            - Quick complete assessment
+            - Full score breakdown
+            - All feature evaluations at once
+            
+            Returns: Complete assessment with score and all feature feedback.
             """
             from exam.llm_provider import llm_client
-            from exam.assess import TEMPLATE
+            from exam.assess import TEMPLATE, calculate_score_from_assessments
             
             # Ensure answer is loaded
             if not self.context.get_answer(question_id, student_code):
@@ -272,7 +231,9 @@ class ExamMCPServer:
             question = self.questions_store.question(question_id)
             
             # Assess all features
-            assessments = []
+            assessments_list = []
+            assessments_dict = {}
+            
             for index, feature in enumerate_features(checklist):
                 prompt = TEMPLATE.format(
                     class_name="FeatureAssessment",
@@ -287,183 +248,35 @@ class ExamMCPServer:
                 llm, _, _ = llm_client(structured_output=FeatureAssessment)
                 result = llm.invoke(prompt)
                 
-                assessments.append({
+                assessments_list.append({
                     "feature": feature.description,
                     "feature_type": feature.type.name,
                     "satisfied": result.satisfied,
                     "motivation": result.motivation
                 })
+                
+                assessments_dict[feature] = result
             
             # Store assessments in context
-            self.context.store_assessments(question_id, student_code, assessments)
+            self.context.store_assessments(question_id, student_code, assessments_list)
             
-            # Calculate statistics
-            core_count = sum(1 for a in assessments if a["feature_type"] == "CORE")
-            core_satisfied = sum(1 for a in assessments if a["feature_type"] == "CORE" and a["satisfied"])
-            
-            important_count = sum(1 for a in assessments if a["feature_type"] == "DETAILS_IMPORTANT")
-            important_satisfied = sum(1 for a in assessments if a["feature_type"] == "DETAILS_IMPORTANT" and a["satisfied"])
-            
-            additional_count = sum(1 for a in assessments if a["feature_type"] == "DETAILS_ADDITIONAL")
-            additional_satisfied = sum(1 for a in assessments if a["feature_type"] == "DETAILS_ADDITIONAL" and a["satisfied"])
-            
-            # Calculate score
-            # CORE: 70% se presente (sempre 1 sola), 0% se assente
-            core_percentage = 0.70 if core_satisfied == 1 else 0.0
-            important_percentage = (important_satisfied / important_count * 0.20) if important_count > 0 else 0.20
-            additional_percentage = (additional_satisfied / additional_count * 0.10) if additional_count > 0 else 0.10
-            
-            final_percentage = core_percentage + important_percentage + additional_percentage
-            estimated_score = round(final_percentage * question.weight, 2)
+            # Calculate score using centralized function
+            score, breakdown, stats = calculate_score_from_assessments(assessments_dict, question.weight)
             
             return json.dumps({
                 "question_id": question_id,
                 "student_code": student_code,
-                "assessments": assessments,
-                "statistics": {
-                    "core": {
-                        "total": core_count,
-                        "satisfied": core_satisfied,
-                        "percentage": round((core_satisfied / core_count * 100) if core_count > 0 else 0, 1)
-                    },
-                    "details_important": {
-                        "total": important_count,
-                        "satisfied": important_satisfied,
-                        "percentage": round((important_satisfied / important_count * 100) if important_count > 0 else 0, 1)
-                    },
-                    "details_additional": {
-                        "total": additional_count,
-                        "satisfied": additional_satisfied,
-                        "percentage": round((additional_satisfied / additional_count * 100) if additional_count > 0 else 0, 1)
-                    }
-                },
+                "assessments": assessments_list,
+                "statistics": stats,
                 "estimated_score": {
-                    "score": estimated_score,
+                    "score": score,
                     "max_score": question.weight,
-                    "percentage": round(final_percentage * 100, 1),
-                    "breakdown": f"Core: {'YES' if core_satisfied == 1 else 'NO'} (70%) + Important: {important_satisfied}/{important_count} (20%) + Additional: {additional_satisfied}/{additional_count} (10%)"
+                    "percentage": round((score / question.weight * 100) if question.weight > 0 else 0, 1),
+                    "breakdown": breakdown
                 }
             }, indent=2)
         
         tools["assess_all_features"] = assess_all_features
-        
-        # TOOL 6: Calculate Score
-        async def calculate_score(question_id: str, student_code: str) -> str:
-            """
-            Calculate final score from stored assessments.
-            Requires that assess_all_features has been run first.
-            
-            Args:
-                question_id: The question ID
-                student_code: The student code
-            
-            Returns:
-                Score breakdown
-            """
-            assessments = self.context.get_assessments(question_id, student_code)
-            if not assessments:
-                return json.dumps({
-                    "error": "No assessments found. Run assess_all_features first."
-                })
-            
-            question = self.questions_store.question(question_id)
-            
-            # Calculate statistics
-            core_count = sum(1 for a in assessments if a["feature_type"] == "CORE")
-            core_satisfied = sum(1 for a in assessments if a["feature_type"] == "CORE" and a["satisfied"])
-            
-            important_count = sum(1 for a in assessments if a["feature_type"] == "DETAILS_IMPORTANT")
-            important_satisfied = sum(1 for a in assessments if a["feature_type"] == "DETAILS_IMPORTANT" and a["satisfied"])
-            
-            additional_count = sum(1 for a in assessments if a["feature_type"] == "DETAILS_ADDITIONAL")
-            additional_satisfied = sum(1 for a in assessments if a["feature_type"] == "DETAILS_ADDITIONAL" and a["satisfied"])
-            
-            # Calculate score
-            # CORE: 70% se presente (sempre 1 sola), 0% se assente
-            core_percentage = 0.70 if core_satisfied == 1 else 0.0
-            important_percentage = (important_satisfied / important_count * 0.20) if important_count > 0 else 0.20
-            additional_percentage = (additional_satisfied / additional_count * 0.10) if additional_count > 0 else 0.10
-            
-            final_percentage = core_percentage + important_percentage + additional_percentage
-            estimated_score = round(final_percentage * question.weight, 2)
-            
-            return json.dumps({
-                "question_id": question_id,
-                "student_code": student_code,
-                "score": estimated_score,
-                "max_score": question.weight,
-                "percentage": round(final_percentage * 100, 1),
-                "breakdown": {
-                    "core": f"{'YES' if core_satisfied == 1 else 'NO'} (70% weight)",
-                    "important": f"{important_satisfied}/{important_count} (20% weight)",
-                    "additional": f"{additional_satisfied}/{additional_count} (10% weight)"
-                }
-            }, indent=2)
-        
-        tools["calculate_score"] = calculate_score
-        
-        return tools
-    
-    def _create_batch_tools(self):
-        """Tool per correzione batch di esami da file YAML."""
-        
-        tools = {}
-        
-        # TOOL: List Available Exams
-        async def list_available_exams() -> str:
-            """
-            List all available exam YAML files in static/se-exams directory.
-            
-            Returns:
-                JSON with list of available exam files
-            """
-            try:
-                exams = []
-                
-                # Find all YAML files in the directory
-                for file in self.exams_dir.glob("*.yml"):
-                    exams.append({
-                        "filename": file.name,
-                        "path": str(file),
-                        "size": file.stat().st_size
-                    })
-                
-                for file in self.exams_dir.glob("*.yaml"):
-                    exams.append({
-                        "filename": file.name,
-                        "path": str(file),
-                        "size": file.stat().st_size
-                    })
-                
-                # Group by exam date
-                exam_pairs = {}
-                for exam in exams:
-                    name = exam["filename"]
-                    # Extract date pattern (e.g., se-2025-06-05)
-                    if "questions" in name:
-                        base = name.replace("-questions", "").replace(".yml", "").replace(".yaml", "")
-                        if base not in exam_pairs:
-                            exam_pairs[base] = {}
-                        exam_pairs[base]["questions"] = exam
-                    elif "responses" in name:
-                        base = name.replace("-responses", "").replace(".yml", "").replace(".yaml", "")
-                        if base not in exam_pairs:
-                            exam_pairs[base] = {}
-                        exam_pairs[base]["responses"] = exam
-                
-                return json.dumps({
-                    "exams_directory": str(self.exams_dir),
-                    "total_files": len(exams),
-                    "exam_pairs": exam_pairs,
-                    "all_files": exams,
-                    "message": f"Found {len(exam_pairs)} exam pairs in {self.exams_dir}"
-                }, indent=2)
-                
-            except Exception as e:
-                import traceback
-                return json.dumps({"error": str(e), "traceback": traceback.format_exc()})
-        
-        tools["list_available_exams"] = list_available_exams
         
         # TOOL: Load Exam from YAML
         async def load_exam_from_yaml(questions_file: str, responses_file: str) -> str:
@@ -588,6 +401,7 @@ class ExamMCPServer:
         async def assess_student_exam(student_email: str) -> str:
             """
             Assess all responses for a single student from loaded exam.
+            Results are automatically saved to evaluations/{email_hash}/assessment.json
             
             Args:
                 student_email: Student's email (can use first 20 chars)
@@ -597,7 +411,7 @@ class ExamMCPServer:
             """
             try:
                 from exam.llm_provider import llm_client
-                from exam.assess import TEMPLATE, enumerate_features, FeatureAssessment
+                from exam.assess import TEMPLATE, enumerate_features, FeatureAssessment, calculate_score_from_assessments, Feature
                 from exam.solution import load_cache as load_answer_cache
                 
                 # Find student
@@ -616,6 +430,11 @@ class ExamMCPServer:
                 if not student_data:
                     return json.dumps({"error": f"Student not found: {student_email}"})
                 
+                # Crea directory per questo studente
+                student_email_full = student_data["email"]
+                student_dir = self.evaluations_dir / student_email_full
+                student_dir.mkdir(parents=True, exist_ok=True)
+                
                 # Assess each response
                 assessments = []
                 total_score = 0.0
@@ -628,6 +447,7 @@ class ExamMCPServer:
                         assessments.append({
                             "question_number": question_num,
                             "question_id": question["id"],
+                            "question_text": question.get("text", ""),
                             "status": "no_response",
                             "score": 0.0,
                             "max_score": question["score"]
@@ -650,6 +470,7 @@ class ExamMCPServer:
                             assessments.append({
                                 "question_number": question_num,
                                 "question_id": question["id"],
+                                "question_text": question.get("text", ""),
                                 "status": "no_checklist",
                                 "score": 0.0,
                                 "max_score": question["score"]
@@ -658,7 +479,9 @@ class ExamMCPServer:
                             continue
                         
                         # Assess features
-                        feature_assessments = []
+                        feature_assessments_list = []
+                        feature_assessments_dict = {}
+                        
                         for index, feature in enumerate_features(checklist):
                             prompt = TEMPLATE.format(
                                 class_name="FeatureAssessment",
@@ -673,32 +496,31 @@ class ExamMCPServer:
                             llm, _, _ = llm_client(structured_output=FeatureAssessment)
                             result = llm.invoke(prompt)
                             
-                            feature_assessments.append({
+                            feature_assessments_list.append({
+                                "feature": feature.description,
                                 "feature_type": feature.type.name,
-                                "satisfied": result.satisfied
+                                "satisfied": result.satisfied,
+                                "motivation": result.motivation
                             })
+                            
+                            feature_assessments_dict[feature] = result
                         
-                        # Calculate score
-                        core_satisfied = sum(1 for a in feature_assessments if a["feature_type"] == "CORE" and a["satisfied"])
-                        important_count = sum(1 for a in feature_assessments if a["feature_type"] == "DETAILS_IMPORTANT")
-                        important_satisfied = sum(1 for a in feature_assessments if a["feature_type"] == "DETAILS_IMPORTANT" and a["satisfied"])
-                        additional_count = sum(1 for a in feature_assessments if a["feature_type"] == "DETAILS_ADDITIONAL")
-                        additional_satisfied = sum(1 for a in feature_assessments if a["feature_type"] == "DETAILS_ADDITIONAL" and a["satisfied"])
-                        
-                        core_percentage = 0.70 if core_satisfied == 1 else 0.0
-                        important_percentage = (important_satisfied / important_count * 0.20) if important_count > 0 else 0.20
-                        additional_percentage = (additional_satisfied / additional_count * 0.10) if additional_count > 0 else 0.10
-                        
-                        final_percentage = core_percentage + important_percentage + additional_percentage
-                        score = round(final_percentage * question["score"], 2)
+                        score, breakdown, stats = calculate_score_from_assessments(
+                            feature_assessments_dict, 
+                            question["score"],
+                        )
                         
                         assessments.append({
                             "question_number": question_num,
                             "question_id": question["id"],
+                            "question_text": q.text,
+                            "student_response": response_text,
                             "status": "assessed",
                             "score": score,
                             "max_score": question["score"],
-                            "core_ok": core_satisfied == 1
+                            "statistics": stats,
+                            "breakdown": breakdown,
+                            "feature_assessments": feature_assessments_list
                         })
                         
                         total_score += score
@@ -708,6 +530,7 @@ class ExamMCPServer:
                         assessments.append({
                             "question_number": question_num,
                             "question_id": question["id"],
+                            "question_text": question.get("text", ""),
                             "status": "error",
                             "error": str(e),
                             "score": 0.0,
@@ -715,14 +538,83 @@ class ExamMCPServer:
                         })
                         total_max_score += question["score"]
                 
-                return json.dumps({
-                    "student_email": student_data["email"][:30] + "...",
+                # Prepara risultato finale
+                result = {
+                    "student_email": student_email_full,
                     "calculated_score": total_score,
                     "max_score": total_max_score,
                     "percentage": round((total_score / total_max_score * 100) if total_max_score > 0 else 0, 1),
-                    "moodle_grade": student_data["moodle_grade"],
+                    "moodle_grade": student_data.get("moodle_grade"),
+                    "scoring_system": "60% Core + 25% Important + 15% Additional",
                     "assessments": assessments
-                }, indent=2)
+                }
+                
+                # Salva assessment completo in JSON
+                assessment_file = student_dir / "assessment.json"
+                with open(assessment_file, 'w', encoding='utf-8') as f:
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+                
+                # Salva anche un summary leggibile
+                summary_file = student_dir / "summary.txt"
+                with open(summary_file, 'w', encoding='utf-8') as f:
+                    f.write(f"STUDENT ASSESSMENT SUMMARY\n")
+                    f.write(f"{'='*70}\n\n")
+                    f.write(f"Student: {student_email_full}\n")
+                    f.write(f"Score: {total_score}/{total_max_score} ({result['percentage']}%)\n")
+                    f.write(f"Moodle Grade: {student_data.get('moodle_grade', 'N/A')}\n")
+                    f.write(f"Scoring: 60% Core + 25% Important + 15% Additional\n\n")
+                    f.write(f"{'='*70}\n\n")
+                    
+                    for assessment in assessments:
+                        f.write(f"Question {assessment['question_number']}: {assessment['question_id']}\n")
+                        f.write(f"{'-'*70}\n")
+                        
+                        if assessment['status'] == 'assessed':
+                            f.write(f"Score: {assessment['score']}/{assessment['max_score']}\n")
+                            f.write(f"Breakdown: {assessment['breakdown']}\n\n")
+                            
+                            # Raggruppa per tipo
+                            core_features = [fa for fa in assessment['feature_assessments'] 
+                                        if fa['feature_type'] == 'CORE']
+                            important_features = [fa for fa in assessment['feature_assessments'] 
+                                                if fa['feature_type'] == 'DETAILS_IMPORTANT']
+                            additional_features = [fa for fa in assessment['feature_assessments'] 
+                                                if fa['feature_type'] == 'DETAILS_ADDITIONAL']
+                            
+                            if core_features:
+                                f.write("CORE Elements:\n")
+                                for fa in core_features:
+                                    status = "OK" if fa['satisfied'] else "MISSING"
+                                    f.write(f"  [{status}] {fa['feature']}\n")
+                                    f.write(f"       {fa['motivation']}\n\n")
+                            
+                            if important_features:
+                                f.write("Important Details:\n")
+                                for fa in important_features:
+                                    status = "OK" if fa['satisfied'] else "MISSING"
+                                    f.write(f"  [{status}] {fa['feature']}\n")
+                                    f.write(f"       {fa['motivation']}\n\n")
+                            
+                            if additional_features:
+                                f.write("Additional Details:\n")
+                                for fa in additional_features:
+                                    status = "OK" if fa['satisfied'] else "MISSING"
+                                    f.write(f"  [{status}] {fa['feature']}\n")
+                                    f.write(f"       {fa['motivation']}\n\n")
+                        else:
+                            f.write(f"Status: {assessment['status']}\n")
+                            if 'error' in assessment:
+                                f.write(f"Error: {assessment['error']}\n")
+                        
+                        f.write(f"\n{'='*70}\n\n")
+                
+                # Aggiungi info sui file salvati al risultato
+                result["saved_files"] = {
+                    "assessment": str(assessment_file),
+                    "summary": str(summary_file)
+                }
+                
+                return json.dumps(result, indent=2)
                 
             except Exception as e:
                 import traceback

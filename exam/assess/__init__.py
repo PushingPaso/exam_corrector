@@ -25,6 +25,90 @@ PATTERN_QUESTION_FOLDER = re.compile(r"^Q\d+\s+-\s+(\w+-\d+)$")
 FILE_TEMPLATE = DIR_ROOT / "exam" / "assess" / "prompt-template.txt"
 TEMPLATE = FILE_TEMPLATE.read_text(encoding="utf-8")
 
+def calculate_score_from_assessments(assessments: dict, max_score: float) -> tuple[float, str, dict]:
+    """
+    Calcola il punteggio da un dizionario di assessment.
+    Sistema: 70% Core + 20% Important + 10% Additional
+    
+    Args:
+        assessments: dict[Feature, FeatureAssessment]
+        max_score: Punteggio massimo della domanda
+        
+    Returns:
+        tuple(score, breakdown, stats): Punteggio, spiegazione, e statistiche dettagliate
+    """
+    if not assessments:
+        return 0.0, "No features assessed", {}
+    
+    # Conta feature per tipo
+    core_total = sum(1 for f in assessments if f.type == FeatureType.CORE)
+    core_satisfied = sum(1 for f, a in assessments.items() 
+                        if f.type == FeatureType.CORE and a.satisfied)
+    
+    important_total = sum(1 for f in assessments if f.type == FeatureType.DETAILS_IMPORTANT)
+    important_satisfied = sum(1 for f, a in assessments.items() 
+                             if f.type == FeatureType.DETAILS_IMPORTANT and a.satisfied)
+    
+    additional_total = sum(1 for f in assessments if f.type == FeatureType.DETAILS_ADDITIONAL)
+    additional_satisfied = sum(1 for f, a in assessments.items() 
+                              if f.type == FeatureType.DETAILS_ADDITIONAL and a.satisfied)
+    
+    # Calcolo percentuali per categoria
+    core_percentage = (core_satisfied / core_total * 0.70) if core_total > 0 else 0.0
+    important_percentage = (important_satisfied / important_total * 0.20) if important_total > 0 else 0.20
+    additional_percentage = (additional_satisfied / additional_total * 0.10) if additional_total > 0 else 0.10
+    
+    # Percentuale finale
+    final_percentage = core_percentage + important_percentage + additional_percentage
+    
+    # Score finale
+    score = round(final_percentage * max_score, 2)
+    
+    # Breakdown dettagliato
+    breakdown_parts = []
+    
+    if core_total > 0:
+        breakdown_parts.append(
+            f"Core: {core_satisfied}/{core_total} "
+            f"({core_percentage/0.70*100:.0f}% → {core_percentage*100:.0f}%)"
+        )
+    
+    if important_total > 0:
+        breakdown_parts.append(
+            f"Important: {important_satisfied}/{important_total} "
+            f"({important_percentage/0.20*100:.0f}% → {important_percentage*100:.0f}%)"
+        )
+    
+    if additional_total > 0:
+        breakdown_parts.append(
+            f"Additional: {additional_satisfied}/{additional_total} "
+            f"({additional_percentage/0.10*100:.0f}% → {additional_percentage*100:.0f}%)"
+        )
+    
+    breakdown = " + ".join(breakdown_parts)
+    breakdown += f" = {final_percentage*100:.0f}% of {max_score} = {score}"
+    
+    # Statistiche dettagliate
+    stats = {
+        "core": {
+            "total": core_total,
+            "satisfied": core_satisfied,
+            "percentage": round((core_satisfied / core_total * 100) if core_total > 0 else 0, 1)
+        },
+        "details_important": {
+            "total": important_total,
+            "satisfied": important_satisfied,
+            "percentage": round((important_satisfied / important_total * 100) if important_total > 0 else 0, 1)
+        },
+        "details_additional": {
+            "total": additional_total,
+            "satisfied": additional_satisfied,
+            "percentage": round((additional_satisfied / additional_total * 100) if additional_total > 0 else 0, 1)
+        }
+    }
+    
+    return score, breakdown, stats
+
 
 def _load_exam(exam: Path | str | list[str] | QuestionsStore) -> QuestionsStore:
     if isinstance(exam, str):
