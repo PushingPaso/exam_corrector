@@ -211,7 +211,7 @@ async def demo_simple():
     client = MCPClientDemo(Path("mock_exam_submissions"))
     
     await client.run_agent("""
-        Load the answear and then checklist of the student 204293 to question Testing-12 using tool and evaluate it.
+        Load the answear and then checklist of the student 204293 to question DistributedSystems-30 using tool and evaluate it.
     """)
 
 async def demo_full_exam():

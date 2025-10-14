@@ -1,298 +1,155 @@
-# Guida alla Configurazione del Sistema di Correzione Automatica
+# Exam Corrector - AI-Powered Open Answer Assessment System
 
-## Modifiche Principali
+An intelligent system for automatically evaluating open-ended exam questions using Large Language Models (LLMs) and Retrieval-Augmented Generation (RAG).
 
-Il sistema è stato aggiornato per utilizzare:
-- **Mistral-7B-Instruct** tramite OpenRouter invece di OpenAI
-- **HuggingFace Embeddings** (sentence-transformers) invece di OpenAI Embeddings
+## Overview
 
-## Installazione
+This system uses AI to:
+- Generate assessment checklists from course materials
+- Evaluate student answers against predefined criteria
+- Provide constructive feedback
+- Calculate scores based on feature satisfaction
 
-### 1. Installare le dipendenze
+**Key Technologies:**
+- **LangChain**: Orchestration framework
+- **Groq API**: Fast LLM inference (Llama 3.3)
+- **BGE Embeddings**: State-of-the-art semantic search
+- **RAG**: Course material retrieval for context-aware assessment
+
+---
+
+## Prerequisites
+
+- **Python**: 3.10 or higher
+- **Operating System**: Windows, macOS, or Linux
+- **RAM**: 4GB minimum (8GB recommended for large embeddings)
+- **Disk Space**: ~2GB for models and data
+
+---
+
+##  Setup
+
+### 1. Clone the Repository
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/yourusername/exam_corrector.git
+cd exam_corrector
 ```
 
-**Nota Importante**: 
-- L'installazione di `torch` e `sentence-transformers` può richiedere alcuni minuti
-- Il primo download del modello embeddings richiederà ~100-500MB
-- Assicurati di avere almeno 2GB di spazio libero su disco
+### 2. Create Virtual Environment
 
-### 2. Verificare l'installazione
-
-```bash
-python test_setup.py
-```
-
-Questo script verificherà che tutto sia installato correttamente.
-
-### 3. Configurare OpenRouter API Key
-
-Ottieni una chiave API gratuita da [OpenRouter](https://openrouter.ai/keys):
-
-**Su Linux/Mac:**
-```bash
-export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
-```
-
-**Su Windows (PowerShell):**
+**Windows (PowerShell):**
 ```powershell
-$env:OPENROUTER_API_KEY="sk-or-v1-your-key-here"
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 ```
 
-**Su Windows (CMD):**
-```cmd
-set OPENROUTER_API_KEY=sk-or-v1-your-key-here
+**macOS/Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-Oppure crea un file `.env` nella root del progetto:
-```
-OPENROUTER_API_KEY=sk-or-v1-your-key-here
-```
-
-Il sistema ti chiederà la chiave all'avvio se non è configurata.
-
-## Utilizzo
-
-### 1. Creare il Vector Store (RAG)
-
-Prima di tutto, popola il database vettoriale con le slide del corso:
+### 3. Install Dependencies
 
 ```bash
-python -m exam.rag --fill
-```
-
-Questo processo:
-- Legge tutti i file `_index.md` dalla cartella `content/`
-- Divide il contenuto in slide
-- Genera embeddings usando sentence-transformers
-- Salva tutto in `slides-rag.db`
-
-**Tempo stimato**: 5-15 minuti (dipende dal numero di slide)
-
-### 2. Testare il RAG
-
-Verifica che il RAG funzioni correttamente:
-
-```bash
-python -m exam.rag
-```
-
-Ti permetterà di fare query interattive contro il vector store.
-
-### 3. Generare le Checklist per le Domande
-
-Genera le checklist di valutazione per tutte le domande:
-
-```bash
-python -m exam.solution
-```
-
-Oppure per domande specifiche:
-
-```bash
-python -m exam.solution SE-1 SE-2
-```
-
-Le checklist vengono salvate in `solutions/` come file YAML.
-
-### 4. Valutare le Risposte degli Studenti
-
-Struttura attesa per le risposte:
-
-```
-exam_submissions/
-├── Q01 - SE-1/
-│   ├── 12345 - Mario Rossi/
-│   │   └── Attempt_1_textresponse
-│   └── 67890 - Luigi Bianchi/
-│       └── Attempt_1_textresponse
-└── Q02 - SE-2/
-    └── ...
-```
-
-Esegui la valutazione:
-
-```bash
-python -m exam.assess /path/to/exam_submissions
-```
-
-Oppure salvando l'output in un file:
-
-```bash
-OUTPUT_FILE=assessment_results.txt python -m exam.assess /path/to/exam_submissions
-```
-
-## Modelli Disponibili
-
-### LLM (via OpenRouter)
-
-Il sistema usa di default `mistralai/mistral-7b-instruct`, ma puoi specificare altri modelli:
-
-```python
-from exam.openai import AIOracle
-
-# Mistral 7B (default, gratuito)
-oracle = AIOracle("mistralai/mistral-7b-instruct")
-
-# Altri modelli Mistral
-oracle = AIOracle("mistralai/mixtral-8x7b-instruct")
-
-# Modelli alternativi
-oracle = AIOracle("meta-llama/llama-3-8b-instruct")
-oracle = AIOracle("google/gemini-pro")
-```
-
-### Embeddings (HuggingFace)
-
-Tre opzioni preconfigurate:
-
-```python
-from exam.rag import sqlite_vector_store
-
-# Small - veloce, leggero (default)
-store = sqlite_vector_store(model="small")
-
-# Large - più accurato ma più lento
-store = sqlite_vector_store(model="large")
-
-# Multilingual - supporto multilingua (EN + IT)
-store = sqlite_vector_store(model="multilingual")
-```
-
-## Workflow Completo
-
-```bash
-# 1. Setup iniziale (una volta sola)
-export OPENROUTER_API_KEY="your-key"
 pip install -r requirements.txt
+```
 
-# 2. Popola il RAG con le slide
-python -m exam.rag --fill
+**Expected time:** 2-3 minutes
 
-# 3. Genera le checklist delle domande
+### 4. Get Groq API Key (Free)
+
+1. Go to [https://console.groq.com/keys](https://console.groq.com/keys)
+2. Sign up (free tier: 30 requests/min)
+3. Create an API key
+4. Copy the key (starts with `gsk_...`)
+
+### 5. Set Environment Variable
+
+**Windows (PowerShell):**
+```powershell
+$env:GROQ_API_KEY = "gsk_your_key_here"
+```
+
+**macOS/Linux:**
+```bash
+export GROQ_API_KEY="gsk_your_key_here"
+```
+
+**Permanent setup (recommended):**
+Create a `.env` file in the project root:
+```bash
+GROQ_API_KEY=gsk_your_key_here
+```
+
+### 6. Build RAG Knowledge Base
+
+```bash
+python -m exam.rag --fill --model bge-large
+```
+
+**What this does:**
+- Downloads BGE-Large embedding model (~1GB, one-time)
+- Processes course slides from `content/` directory
+- Creates vector database for semantic search
+- **Time:** 5-10 minutes (first run)
+
+
+### 7. Generate Assessment Checklists
+
+```bash
 python -m exam.solution
-
-# 4. Valuta le risposte degli studenti
-python -m exam.assess ./exam_submissions
-
-# 5. (Opzionale) Genera varianti del test
-python -m exam.test -w 9 -c 1 2 3
 ```
 
-## Struttura dei File Generati
+**What this does:**
+- Generates checklists (SHOULD/SHOULDN'T items) for each question
+- Uses RAG to find relevant course content
+- Saves results to `solutions/` directory
+- **Time:** ~30 seconds per question
 
-### Checklist (solutions/*.yaml)
-
-```yaml
-id: SE-1
-question: "Descrivi il pattern MVC..."
-model_name: mistralai/mistral-7b-instruct
-should:
-  - "Menziona Model, View, Controller"
-  - "Spiega la separazione delle responsabilità"
-should_not:
-  - "Confonde MVC con MVVM"
-examples:
-  - "Framework come Django o Spring MVC"
-see_also:
-  - "Vantaggi della separazione UI/logica"
-```
-
-### Valutazioni (cache in submission folders)
-
-```yaml
-feature: "Menziona Model, View, Controller"
-feature_type: SHOULD
-satisfied: true
-motivation: "Hai correttamente identificato i tre componenti principali del pattern MVC."
-```
-
-## Troubleshooting
-
-### Errore: "Module not found"
+### 8. Run MCP client
 
 ```bash
-pip install -r requirements.txt --upgrade
+python mcp_client.py
 ```
 
-### Embeddings troppo lenti
+**What this does:**
+- Evaluate an answear of a specific student
+- Evaluates a full exam
+- Evaluates the exam  of a student 
 
-Usa il modello "small" o abilita GPU:
 
-```python
-# In exam/rag/__init__.py, modifica:
-model_kwargs={'device': 'cuda'}  # invece di 'cpu'
+---
+
+## 📁 Project Structure
+
+```
+exam_corrector/
+├── exam/                      # Main package
+│   ├── __init__.py           # Question/Answer data models
+│   ├── assess/               # Assessment engine
+│   │   ├── __init__.py       # Assessor class
+│   │   └── prompt-template.txt
+│   ├── solution/             # Checklist generation
+│   │   ├── __init__.py       # SolutionProvider class
+│   │   └── prompt-template.txt
+│   ├── rag/                  # Retrieval-Augmented Generation
+│   │   ├── __init__.py       # Vector store management
+│   │   └── __main__.py       # CLI for RAG operations
+│   ├── openai/               # LLM client (Groq)
+│   │   └── __init__.py
+│   └── mcp/                  # Model Context Protocol (optional)
+│       └── __init__.py
+├── static/
+│   └── questions.csv         # Question bank
+├── content/                  # Course materials (Markdown slides)
+├── solutions/                # Generated checklists (YAML)
+├── mock_exam_submissions/    # Example student answers
+├── slides-rag.db            # Vector database (generated)
+├── requirements.txt          # Python dependencies
+└── README.md                # This file
 ```
 
-### OpenRouter rate limiting
+---
 
-OpenRouter ha limiti gratuiti. Se necessario, considera:
-- Aumentare il delay tra richieste
-- Usare un piano a pagamento
-- Implementare caching più aggressivo
-
-### Il RAG non trova contenuti rilevanti
-
-Verifica che:
-1. Le slide siano in formato corretto
-2. Il delimitatore `---` o `+++` sia presente
-3. Il contenuto sia in `content/**/_index.md`
-
-```bash
-# Debug: stampa le slide trovate
-python -c "from exam.rag import all_slides; print(len(list(all_slides())))"
-```
-
-## Performance
-
-### Tempi Stimati
-
-- **RAG population**: 5-15 min (dipende da # slide)
-- **Generazione checklist**: 30-60s per domanda
-- **Valutazione risposta**: 10-30s per feature
-
-### Ottimizzazioni
-
-1. **Cache**: Tutte le operazioni LLM usano cache YAML
-2. **Batch processing**: Le valutazioni sono elaborate sequenzialmente
-3. **Embeddings locali**: Nessun costo API per il RAG
-
-## Sicurezza
-
-- Non committare mai `OPENROUTER_API_KEY` nel repository
-- Usa `.env` file o variabili d'ambiente
-- Le chiavi API sono richieste interattivamente se mancanti
-
-## Limitazioni Attuali
-
-1. **No browser storage**: Il sistema non usa localStorage/sessionStorage
-2. **Single-threaded**: Le valutazioni sono sequenziali
-3. **No GPU optimization**: Di default usa CPU per embeddings
-4. **Italiano**: Ottimizzato per contenuti in italiano/inglese
-
-## Prossimi Sviluppi (Agentic AI)
-
-Per implementare il sistema agentico completo:
-
-1. **Agent 1 - Checklist Generator**
-   - Input: Domanda + RAG context
-   - Output: Checklist strutturata
-   - Tool: RAG search
-
-2. **Agent 2 - Answer Assessor**
-   - Input: Risposta studente + Checklist
-   - Output: Valutazione + Feedback
-   - Tool: Feature verification
-
-3. **Tools Aggiuntivi**
-   - Database reader (Excel/CSV)
-   - Feedback generator
-   - Score calculator
-   - MCP gateway per integrazioni esterne
-
-4. **Orchestration**
-   - LangGraph per workflow multi-agent
-   - State management
-   - Error handling e retry logic
