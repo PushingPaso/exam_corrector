@@ -139,7 +139,7 @@ class MCPClientDemo:
 
             - load_student_answer: Load an answer into memory
             - load_checklist: Load grading criteria into memory
-            - assess_all_features:
+            - assess_all_features: evaluating all the feature of an answear
             - load_exam_from_yaml_tool: load the exam from yaml file
             - evaluate a full exam:
             - assess_student_exam_tool:evaluate an axam for a single student
@@ -238,7 +238,7 @@ async def demo_student_exam():
     client = MCPClientDemo(Path("mock_exam_submissions"))
     
     await client.run_agent("""
-        Load the se-2025-06-05 exam files, find the first student and assess all his 9 responses
+        First you need to Load the se-2025-06-05 exam files and students, find the first student and assess all his 9 responses
         show me his total score and which questions they did well/poorly on.
     """)
 

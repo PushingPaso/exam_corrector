@@ -13,7 +13,7 @@ def ensure_groq_api_key():
     return os.environ[KEY_GROQ_API_KEY]
 
 
-def llm_client(model_name: str = "llama-3.1-8b-instant", model_provider: str = "groq", structured_output: type = None):
+def llm_client(model_name: str = "mixtral-8x7b-32768", model_provider: str = "groq", structured_output: type = None):
     """
     Creates an LLM client configured for Groq.
     
@@ -27,8 +27,6 @@ def llm_client(model_name: str = "llama-3.1-8b-instant", model_provider: str = "
     # Model configurations
     model_configs = {
         "llama-3.3": "llama-3.3-70b-versatile",
-        "llama-3.1": "llama-3.1-70b-versatile",
-        "mixtral": "mixtral-8x7b-32768",
         "llama-8b": "llama-3.1-8b-instant",
     }
     

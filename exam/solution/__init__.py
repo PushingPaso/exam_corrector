@@ -18,9 +18,6 @@ class Answer(BaseModel):
     details_important: list[str] = Field(
         description="Dettagli importanti che dovrebbero essere menzionati per arricchire la risposta. Ogni item è una stringa Markdown.",
     )
-    details_additional: list[str] = Field(
-        description="Dettagli aggiuntivi opzionali che possono ulteriormente migliorare la risposta. Ogni item è una stringa Markdown.",
-    )
 
     def pretty(self, indent=0, prefix="\t") -> str:
         result = "Core (elementi essenziali):\n"
@@ -34,12 +31,7 @@ class Answer(BaseModel):
             result += "\n".join(f"- {item}" for item in self.details_important) + "\n"
         else:
             result += "- <none>\n"
-        
-        result += "Details - Aggiuntivi:\n"
-        if self.details_additional:
-            result += "\n".join(f"- {item}" for item in self.details_additional) + "\n"
-        else:
-            result += "- <none>\n"
+
         
         result = result.strip()
         if indent > 0:
@@ -96,7 +88,6 @@ def load_cache(question: Question) -> Answer | None:
             return Answer(
                 core=cached_answer.get("core", []),
                 details_important=cached_answer.get("details_important", []),
-                details_additional=cached_answer.get("details_additional", []),
             )
         except Exception as e:
             print(f"# error loading cached answer from {cache_file_path}: {e}")

@@ -4,12 +4,11 @@ Your task is to create a structured checklist for evaluating student answers to 
 
 For each question, you should identify:
 
-1. **Core** - The essential element or elements that MUST be present in a perfect answer to address the most important part of the question. These are the fundamental concepts, definitions, or explanations that directly answer what is being asked.
+1. **Core** - The essential element or elements that MUST be present, in a perfect answer to address the most important part of the question. These are the fundamental concepts, definitions, or explanations that directly answer what is being asked, normally tou have to create one of this but if really necessary two.
 
 2. **Important Details** - Significant additional details that should be mentioned to enrich the answer. These go beyond the core but are important for a complete understanding.
 
-3. **Additional Details** - Optional supplementary details that can further improve the answer. These might include examples, comparisons, background context, or motivational aspects that add depth but are not strictly necessary.
-
+If a concept it's in the core in the core part don't insert it in the Important details too.
 Each item in the lists should be specific, verifiable, and actionable - not vague or fluffy.
 
 Only extract the properties mentioned in the '{class_name}' function.

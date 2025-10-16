@@ -72,7 +72,6 @@ class ExamMCPServer:
         self.evaluations_dir.mkdir(parents=True, exist_ok=True)
         
         # Directory for YAML exam files
-        from exam import DIR_ROOT
         self.exams_dir = DIR_ROOT / "static" / "se-exams"
         self.exams_dir.mkdir(parents=True, exist_ok=True)
         
@@ -161,7 +160,6 @@ class ExamMCPServer:
                     "question_id": question_id,
                     "core_count": len(cached.core),
                     "important_count": len(cached.details_important),
-                    "additional_count": len(cached.details_additional)
                 })
             
             try:
@@ -181,11 +179,9 @@ class ExamMCPServer:
                     "features": {
                         "core": len(checklist.core),
                         "important": len(checklist.details_important),
-                        "additional": len(checklist.details_additional)
                     },
                     "core_items": checklist.core,
                     "important_items": checklist.details_important,
-                    "additional_items": checklist.details_additional,
                     "message": "Checklist loaded into memory. Use assess_all_features to evaluate."
                 })
             except Exception as e:
@@ -382,7 +378,7 @@ class ExamMCPServer:
                     "questions": questions,
                     "students_preview": [
                         {
-                            "email": s["email"][:30] + "...",
+                            "email": s["email"] ,
                             "num_responses": s["num_responses"],
                             "time_taken": s["time_taken"]
                         }
@@ -413,27 +409,52 @@ class ExamMCPServer:
                 from exam.llm_provider import llm_client
                 from exam.assess import TEMPLATE, enumerate_features, FeatureAssessment, calculate_score_from_assessments, Feature
                 from exam.solution import load_cache as load_answer_cache
-                
-                # Find student
+
+                student_email_clean = student_email.rstrip('.').strip()
+
+                # Find student with FLEXIBLE matching
                 student_data = None
                 questions = None
-                
+                matched_email = None
+
                 for exam_data in self.context.loaded_exams.values():
                     for student in exam_data["students"]:
-                        if student["email"].startswith(student_email[:20]):
+                        full_email = student["email"]
+
+                        # Match flessibile:
+                        # 1. Exact match (case insensitive)
+                        # 2. Partial match (inizio email, min 10 chars)
+                        if (full_email.lower() == student_email_clean.lower() or
+                                (len(student_email_clean) >= 10 and
+                                 full_email.lower().startswith(student_email_clean.lower()))):
                             student_data = student
                             questions = exam_data["questions"]
+                            matched_email = full_email
                             break
+
                     if student_data:
                         break
-                
+
                 if not student_data:
-                    return json.dumps({"error": f"Student not found: {student_email}"})
-                
-                # Crea directory per questo studente
-                student_email_full = student_data["email"]
+                    # DEBUG: mostra studenti disponibili
+                    available = []
+                    for exam_data in self.context.loaded_exams.values():
+                        available.extend([s["email"] for s in exam_data["students"][:5]])
+
+                    return json.dumps({
+                        "error": f"Student not found: '{student_email_clean}'",
+                        "searched_for": student_email_clean,
+                        "available_students_sample": available,
+                        "hint": "Use exact email or at least first 10 characters",
+                        "num_loaded_students": sum(len(e["students"]) for e in self.context.loaded_exams.values())
+                    })
+
+                # Usa matched_email (email completa) per tutto il resto
+                student_email_full = matched_email
                 student_dir = self.evaluations_dir / student_email_full
                 student_dir.mkdir(parents=True, exist_ok=True)
+
+                print(f"[ASSESS] Matched student: {student_email_full}")
                 
                 # Assess each response
                 assessments = []
@@ -545,7 +566,7 @@ class ExamMCPServer:
                     "max_score": total_max_score,
                     "percentage": round((total_score / total_max_score * 100) if total_max_score > 0 else 0, 1),
                     "moodle_grade": student_data.get("moodle_grade"),
-                    "scoring_system": "60% Core + 25% Important + 15% Additional",
+                    "scoring_system": "70% Core + 30% Important_Details",
                     "assessments": assessments
                 }
                 
@@ -562,7 +583,7 @@ class ExamMCPServer:
                     f.write(f"Student: {student_email_full}\n")
                     f.write(f"Score: {total_score}/{total_max_score} ({result['percentage']}%)\n")
                     f.write(f"Moodle Grade: {student_data.get('moodle_grade', 'N/A')}\n")
-                    f.write(f"Scoring: 60% Core + 25% Important + 15% Additional\n\n")
+                    f.write(f"Scoring: 70% Core + 35% Important\n\n")
                     f.write(f"{'='*70}\n\n")
                     
                     for assessment in assessments:
@@ -578,8 +599,7 @@ class ExamMCPServer:
                                         if fa['feature_type'] == 'CORE']
                             important_features = [fa for fa in assessment['feature_assessments'] 
                                                 if fa['feature_type'] == 'DETAILS_IMPORTANT']
-                            additional_features = [fa for fa in assessment['feature_assessments'] 
-                                                if fa['feature_type'] == 'DETAILS_ADDITIONAL']
+
                             
                             if core_features:
                                 f.write("CORE Elements:\n")
@@ -595,12 +615,7 @@ class ExamMCPServer:
                                     f.write(f"  [{status}] {fa['feature']}\n")
                                     f.write(f"       {fa['motivation']}\n\n")
                             
-                            if additional_features:
-                                f.write("Additional Details:\n")
-                                for fa in additional_features:
-                                    status = "OK" if fa['satisfied'] else "MISSING"
-                                    f.write(f"  [{status}] {fa['feature']}\n")
-                                    f.write(f"       {fa['motivation']}\n\n")
+
                         else:
                             f.write(f"Status: {assessment['status']}\n")
                             if 'error' in assessment:

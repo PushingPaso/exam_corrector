@@ -28,7 +28,7 @@ TEMPLATE = FILE_TEMPLATE.read_text(encoding="utf-8")
 def calculate_score_from_assessments(assessments: dict, max_score: float) -> tuple[float, str, dict]:
     """
     Calcola il punteggio da un dizionario di assessment.
-    Sistema: 70% Core + 20% Important + 10% Additional
+    Sistema: 70% Core + 30% Important
     
     Args:
         assessments: dict[Feature, FeatureAssessment]
@@ -55,11 +55,10 @@ def calculate_score_from_assessments(assessments: dict, max_score: float) -> tup
     
     # Calcolo percentuali per categoria
     core_percentage = (core_satisfied / core_total * 0.70) if core_total > 0 else 0.0
-    important_percentage = (important_satisfied / important_total * 0.20) if important_total > 0 else 0.20
-    additional_percentage = (additional_satisfied / additional_total * 0.10) if additional_total > 0 else 0.10
-    
+    important_percentage = (important_satisfied / important_total * 0.30) if important_total > 0 else 0.30
+
     # Percentuale finale
-    final_percentage = core_percentage + important_percentage + additional_percentage
+    final_percentage = core_percentage + important_percentage
     
     # Score finale
     score = round(final_percentage * max_score, 2)
@@ -78,12 +77,7 @@ def calculate_score_from_assessments(assessments: dict, max_score: float) -> tup
             f"Important: {important_satisfied}/{important_total} "
             f"({important_percentage/0.20*100:.0f}% → {important_percentage*100:.0f}%)"
         )
-    
-    if additional_total > 0:
-        breakdown_parts.append(
-            f"Additional: {additional_satisfied}/{additional_total} "
-            f"({additional_percentage/0.10*100:.0f}% → {additional_percentage*100:.0f}%)"
-        )
+
     
     breakdown = " + ".join(breakdown_parts)
     breakdown += f" = {final_percentage*100:.0f}% of {max_score} = {score}"
@@ -99,11 +93,6 @@ def calculate_score_from_assessments(assessments: dict, max_score: float) -> tup
             "total": important_total,
             "satisfied": important_satisfied,
             "percentage": round((important_satisfied / important_total * 100) if important_total > 0 else 0, 1)
-        },
-        "details_additional": {
-            "total": additional_total,
-            "satisfied": additional_satisfied,
-            "percentage": round((additional_satisfied / additional_total * 100) if additional_total > 0 else 0, 1)
         }
     }
     
@@ -185,11 +174,7 @@ def enumerate_features(answer: Answer):
     for detail in answer.details_important:
         yield i, Feature(type=FeatureType.DETAILS_IMPORTANT, description=detail)
         i += 1
-    
-    # DETAILS_ADDITIONAL - dettagli aggiuntivi
-    for detail in answer.details_additional:
-        yield i, Feature(type=FeatureType.DETAILS_ADDITIONAL, description=detail)
-        i += 1
+
 
 
 class FeatureAssessment(BaseModel):
@@ -203,62 +188,62 @@ class AnswerAssessment:
     answer: str
     # A dictionary mapping each feature to its assessment.
     assessment: dict[Feature, FeatureAssessment] = field(default_factory=dict)
-    
+
     def calculate_score(self, max_score: float) -> tuple[float, str]:
         """
         Calcola il punteggio della risposta con il nuovo sistema:
         - Core: 70% del punteggio
         - Details Important: 20% del punteggio
         - Details Additional: 10% del punteggio
-        
+
         Args:
             max_score: Punteggio massimo della domanda
-            
+
         Returns:
             tuple(score, breakdown): Punteggio ottenuto e spiegazione del calcolo
         """
         if not self.assessment:
             return 0.0, "No features assessed"
-        
+
         # Conta feature per tipo
         core_total = sum(1 for f in self.assessment if f.type == FeatureType.CORE)
-        core_satisfied = sum(1 for f, a in self.assessment.items() 
+        core_satisfied = sum(1 for f, a in self.assessment.items()
                             if f.type == FeatureType.CORE and a.satisfied)
-        
+
         important_total = sum(1 for f in self.assessment if f.type == FeatureType.DETAILS_IMPORTANT)
-        important_satisfied = sum(1 for f, a in self.assessment.items() 
+        important_satisfied = sum(1 for f, a in self.assessment.items()
                                  if f.type == FeatureType.DETAILS_IMPORTANT and a.satisfied)
-        
+
         additional_total = sum(1 for f in self.assessment if f.type == FeatureType.DETAILS_ADDITIONAL)
-        additional_satisfied = sum(1 for f, a in self.assessment.items() 
+        additional_satisfied = sum(1 for f, a in self.assessment.items()
                                   if f.type == FeatureType.DETAILS_ADDITIONAL and a.satisfied)
-        
+
         # Calcolo percentuali per categoria
         core_percentage = (core_satisfied / core_total * 0.70) if core_total > 0 else 0.0
         important_percentage = (important_satisfied / important_total * 0.20) if important_total > 0 else 0.20
         additional_percentage = (additional_satisfied / additional_total * 0.10) if additional_total > 0 else 0.10
-        
+
         # Percentuale finale
         final_percentage = core_percentage + important_percentage + additional_percentage
-        
+
         # Score finale
         score = round(final_percentage * max_score, 2)
-        
+
         # Breakdown dettagliato
         breakdown_parts = []
-        
+
         if core_total > 0:
             breakdown_parts.append(f"Core: {core_satisfied}/{core_total} ({core_percentage/0.70*100:.0f}% → {core_percentage*100:.0f}%)")
-        
+
         if important_total > 0:
             breakdown_parts.append(f"Important: {important_satisfied}/{important_total} ({important_percentage/0.20*100:.0f}% → {important_percentage*100:.0f}%)")
-        
+
         if additional_total > 0:
             breakdown_parts.append(f"Additional: {additional_satisfied}/{additional_total} ({additional_percentage/0.10*100:.0f}% → {additional_percentage*100:.0f}%)")
-        
+
         breakdown = " + ".join(breakdown_parts)
         breakdown += f" = {final_percentage*100:.0f}% of {max_score} = {score}"
-        
+
         return score, breakdown
 
 
@@ -270,7 +255,7 @@ class StudentAssessment:
     code: str
     # A dictionary mapping each question to its answer and assessments.
     answers: dict[Question, AnswerAssessment] = field(default_factory=dict)
-    
+
     def total_score(self) -> float:
         """Calcola il punteggio totale dello studente."""
         total = 0.0
@@ -343,8 +328,7 @@ class TestAssessment:
                 core_missing = []
                 important_missing = []
                 important_present = []
-                additional_missing = []
-                additional_present = []
+
                 
                 for feature, assessment in answer.assessment.items():
                     if feature.type == FeatureType.CORE:
@@ -355,11 +339,7 @@ class TestAssessment:
                             important_missing.append((feature, assessment))
                         else:
                             important_present.append((feature, assessment))
-                    else:  # DETAILS_ADDITIONAL
-                        if not assessment.satisfied:
-                            additional_missing.append((feature, assessment))
-                        else:
-                            additional_present.append((feature, assessment))
+
                 
                 # Mostra problemi CORE
                 if core_missing:
@@ -379,16 +359,10 @@ class TestAssessment:
                         for feature, assessment in important_missing:
                             print(f"{feature.description}", file=file)
                             print(f"{assessment.motivation.replace(chr(10), chr(10) + '        → ')}", file=file)
-                    
-                    if additional_missing or additional_present:
-                        print("  Additional Details:", file=file)
-                        for feature, assessment in additional_present:
-                            print(f"{feature.description}", file=file)
-                        for feature, assessment in additional_missing:
-                            print(f"{feature.description}", file=file)
+
                 
                 # Calcola e mostra punteggio
-                score, breakdown = answer.calculate_score(question.weight)
+                score, breakdown = answer.calculate_score(3)
                 print(f"  Score: {score}/{question.weight}", file=file)
                 print(f"  Calculation: {breakdown}", file=file)
             
