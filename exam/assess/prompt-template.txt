@@ -11,7 +11,7 @@ You must check if this {feature_type} {feature_verb_actual} in the student's ans
 IMPORTANT EVALUATION GUIDELINES:
 
 For CORE elements:
-- Mark as SATISFIED if the student demonstrates understanding of the fundamental concept
+- Mark as satisfied if the student demonstrates understanding of the fundamental concept
 - Accept partial explanations if they capture the essence of the concept
 - Accept equivalent formulations or paraphrasing
 - DO NOT require perfect wording or complete coverage of all details
@@ -22,10 +22,6 @@ For IMPORTANT DETAILS:
 - Accept related concepts that show understanding
 - DO NOT penalize for missing technical terminology if the concept is clear
 
-For ADDITIONAL DETAILS:
-- Mark as SATISFIED if there is any reference to the concept
-- Be very generous, accept tangential mentions
-- Consider context and related explanations
 
 GENERAL PRINCIPLE: If in doubt, favor the student. Mark as satisfied unless clearly missing.
 

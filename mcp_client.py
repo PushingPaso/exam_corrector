@@ -238,8 +238,8 @@ async def demo_student_exam():
     client = MCPClientDemo(Path("mock_exam_submissions"))
     
     await client.run_agent("""
-        First you need to Load the se-2025-06-05 exam files and students, find the first student and assess all his 9 responses
-        show me his total score and which questions they did well/poorly on.
+        First you need to Load the se-2025-06-05 exam question and response, 
+        for the first student assess all his 9 answer of the exam saving the result in the evaluation package
     """)
 
 
