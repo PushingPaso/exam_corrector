@@ -115,9 +115,8 @@ python mcp_client.py
 ```
 
 **What this does:**
-- Evaluate an answear of a specific student
 - Evaluates a full exam
-- Evaluates the exam  of a student 
+
 
 
 ---
