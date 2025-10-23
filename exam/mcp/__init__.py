@@ -245,22 +245,22 @@ class ExamMCPServer:
         
         tools["load_exam_from_yaml"] = load_exam_from_yaml
         
-        # TOOL: Assess Student Exam
+        # TOOL: Assess Student Exam (REFACTORIZZATO)
         async def assess_student_exam(student_email: str) -> str:
             """
             Assess all responses for a single student from loaded exam.
             Results are automatically saved to evaluations/{email_hash}/assessment.json
-            
+
+            REFACTORIZZATO: Ora usa la classe Assessor per la logica di valutazione.
+
             Args:
                 student_email: Student's email (can use first 20 chars)
-            
+
             Returns:
                 Complete assessment for all student's responses
             """
             try:
-                from exam.llm_provider import llm_client
-                from exam.assess import TEMPLATE, enumerate_features, FeatureAssessment, calculate_score_from_assessments, Feature
-                from exam.solution import load_cache as load_answer_cache
+                from exam.assess import Assessor
 
                 student_email_clean = student_email.rstrip('.').strip()
 
@@ -304,157 +304,71 @@ class ExamMCPServer:
                 student_dir.mkdir(parents=True, exist_ok=True)
 
                 print(f"[ASSESS] Matched student: {student_email_full}")
-                
-                # Assess each response
-                assessments = []
-                total_score = 0.0
-                total_max_score = 0.0
-                
-                for question in questions:
-                    question_num = int(question["number"].replace("Question ", ""))
-                    
-                    if question_num not in student_data["responses"]:
-                        assessments.append({
-                            "question_number": question_num,
-                            "question_id": question["id"],
-                            "question_text": question.get("text", ""),
-                            "status": "no_response",
-                            "score": 0.0,
-                            "max_score": question["score"]
-                        })
-                        total_max_score += question["score"]
-                        continue
-                    
-                    try:
-                        q = self.questions_store.question(question["id"])
-                        response_text = student_data["responses"][question_num]
-                        
-                        # Load checklist if not in context
-                        # if not self.context.get_checklist(question["id"]):
-                        #     checklist = load_answer_cache(q)
-                        #     if checklist:
-                        #         self.context.store_checklist(question["id"], checklist)
-                        
-                        checklist = self.context.get_checklist(question["id"])
-                        if not checklist:
-                            print("No Checklist found")
-                        
-                        # Assess features
-                        feature_assessments_list = []
-                        feature_assessments_dict = {}
-                        
-                        for index, feature in enumerate_features(checklist):
-                            prompt = TEMPLATE.format(
-                                class_name="FeatureAssessment",
-                                question=q.text,
-                                feature_type=feature.type.value,
-                                feature_verb_ideal=feature.verb_ideal,
-                                feature_verb_actual=feature.verb_actual,
-                                feature=feature.description,
-                                answer=response_text
-                            )
-                            
-                            llm, _, _ = llm_client(structured_output=FeatureAssessment)
-                            result = llm.invoke(prompt)
-                            
-                            feature_assessments_list.append({
-                                "feature": feature.description,
-                                "feature_type": feature.type.name,
-                                "satisfied": result.satisfied,
-                                "motivation": result.motivation
-                            })
-                            
-                            feature_assessments_dict[feature] = result
-                        
-                        score, breakdown, stats = calculate_score_from_assessments(
-                            feature_assessments_dict, 
-                            question["score"],
-                        )
-                        
-                        assessments.append({
-                            "question_number": question_num,
-                            "question_id": question["id"],
-                            "question_text": q.text,
-                            "student_response": response_text,
-                            "status": "assessed",
-                            "score": score,
-                            "max_score": question["score"],
-                            "statistics": stats,
-                            "breakdown": breakdown,
-                            "feature_assessments": feature_assessments_list
-                        })
-                        
-                        total_score += score
-                        total_max_score += question["score"]
-                        
-                    except Exception as e:
-                        assessments.append({
-                            "question_number": question_num,
-                            "question_id": question["id"],
-                            "question_text": question.get("text", ""),
-                            "status": "error",
-                            "error": str(e),
-                            "score": 0.0,
-                            "max_score": question["score"]
-                        })
-                        total_max_score += question["score"]
-                
-                # Prepara risultato finale
-                result = {
-                    "student_email": student_email_full,
-                    "calculated_score": total_score,
-                    "max_score": total_max_score,
-                    "percentage": round((total_score / total_max_score * 100) if total_max_score > 0 else 0, 1),
-                    "moodle_grade": student_data.get("moodle_grade"),
-                    "scoring_system": "70% Core + 30% Important_Details",
-                    "assessments": assessments
-                }
-                
+
+                # =========================================================
+                # REFACTORING: Usa la classe Assessor invece di codice inline
+                # =========================================================
+
+                assessor = Assessor()
+
+                result = await assessor.assess_student_exam(
+                    student_email=student_email_full,
+                    exam_questions=questions,
+                    student_responses=student_data["responses"],
+                    questions_store=self.questions_store,
+                    context=self.context
+                )
+
+                # Aggiungi metadati Moodle
+                result["moodle_grade"] = student_data.get("moodle_grade")
+
+                # =========================================================
+                # Fine refactoring - il resto è solo salvataggio file
+                # =========================================================
+
                 # Salva assessment completo in JSON
                 assessment_file = student_dir / "assessment.json"
                 with open(assessment_file, 'w', encoding='utf-8') as f:
                     json.dump(result, f, indent=2, ensure_ascii=False)
-                
+
                 # Salva anche un summary leggibile
                 summary_file = student_dir / "summary.txt"
                 with open(summary_file, 'w', encoding='utf-8') as f:
                     f.write(f"STUDENT ASSESSMENT SUMMARY\n")
                     f.write(f"{'='*70}\n\n")
                     f.write(f"Student: {student_email_full}\n")
-                    f.write(f"Score: {total_score}/{total_max_score} ({result['percentage']}%)\n")
+                    f.write(f"Score: {result['calculated_score']}/{result['max_score']} ({result['percentage']}%)\n")
                     f.write(f"Moodle Grade: {student_data.get('moodle_grade', 'N/A')}\n")
-                    f.write(f"Scoring: 70% Core + 35% Important\n\n")
+                    f.write(f"Scoring: {result['scoring_system']}\n\n")
                     f.write(f"{'='*70}\n\n")
-                    
-                    for assessment in assessments:
+
+                    for assessment in result["assessments"]:
                         f.write(f"Question {assessment['question_number']}: {assessment['question_id']}\n")
                         f.write(f"{'-'*70}\n")
-                        
+
                         if assessment['status'] == 'assessed':
                             f.write(f"Score: {assessment['score']}/{assessment['max_score']}\n")
                             f.write(f"Breakdown: {assessment['breakdown']}\n\n")
-                            
-                            # Raggruppa per tipo
-                            core_features = [fa for fa in assessment['feature_assessments'] 
-                                        if fa['feature_type'] == 'CORE']
-                            important_features = [fa for fa in assessment['feature_assessments'] 
-                                                if fa['feature_type'] == 'DETAILS_IMPORTANT']
 
+                            # Raggruppa per tipo
+                            core_features = [fa for fa in assessment['feature_assessments']
+                                        if fa['feature_type'] == 'CORE']
+                            important_features = [fa for fa in assessment['feature_assessments']
+                                                if fa['feature_type'] == 'DETAILS_IMPORTANT']
 
                             if core_features:
                                 f.write("CORE Elements:\n")
                                 for fa in core_features:
-                                    status = "OK" if fa['satisfied'] else "MISSING"
+                                    status = "✓ OK" if fa['satisfied'] else "✗ MISSING"
                                     f.write(f"  [{status}] {fa['feature']}\n")
                                     f.write(f"       {fa['motivation']}\n\n")
-                            
+
                             if important_features:
                                 f.write("Important Details:\n")
                                 for fa in important_features:
-                                    status = "OK" if fa['satisfied'] else "MISSING"
+                                    status = "✓ OK" if fa['satisfied'] else "✗ MISSING"
                                     f.write(f"  [{status}] {fa['feature']}\n")
                                     f.write(f"       {fa['motivation']}\n\n")
-                            
 
                         else:
                             f.write(f"Status: {assessment['status']}\n")
