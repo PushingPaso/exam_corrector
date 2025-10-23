@@ -2,15 +2,13 @@
 MCP Server con Context Condiviso per collaborazione tra tool.
 """
 
-import asyncio
 import json
-from pathlib import Path
-from typing import Any, Dict
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict
 
-from exam import get_questions_store, Question
+from exam import get_questions_store
 from exam.solution import Answer, load_cache as load_answer_cache
-from exam.assess import FeatureAssessment, Feature, FeatureType, enumerate_features
 
 
 @dataclass
@@ -61,8 +59,7 @@ class AssessmentContext:
 class ExamMCPServer:
     """MCP Server con context condiviso per collaborazione tra tool."""
     
-    def __init__(self, exam_dir: Path = None):
-        self.exam_dir = exam_dir
+    def __init__(self):
         self.questions_store = get_questions_store()
         self.context = AssessmentContext()
         self.context.loaded_exams = {}  # For batch exam processing
@@ -80,65 +77,6 @@ class ExamMCPServer:
     def _create_tools(self):
         """Create all available tools."""
         tools = {}
-        
-        # TOOL: Load Student Answer (ATOMICO)
-        async def load_student_answer(question_id: str, student_code: str) -> str:
-            """
-            Load a student's answer into memory.
-            The answer will be available for other tools to use.
-            
-            Args:
-                question_id: The question ID (e.g., "CI-5")
-                student_code: The student code (e.g., "280944")
-            
-            Returns:
-                JSON with answer preview and confirmation it's loaded
-            """
-            if not self.exam_dir:
-                return json.dumps({"error": "No exam directory configured"})
-            
-            # Check if already loaded
-            cached = self.context.get_answer(question_id, student_code)
-            if cached:
-                return json.dumps({
-                    "status": "already_loaded",
-                    "question_id": question_id,
-                    "student_code": student_code,
-                    "preview": cached[:200] + "..." if len(cached) > 200 else cached,
-                    "length": len(cached)
-                })
-            
-            # Load from file
-            pattern = f"Q* - {question_id}/{student_code} - *"
-            matching_dirs = list(self.exam_dir.glob(pattern))
-            
-            if not matching_dirs:
-                return json.dumps({"error": f"No answer found for student {student_code} on question {question_id}"})
-            
-            student_dir = matching_dirs[0]
-            answer_file = next(student_dir.glob("Attempt*_textresponse"), None)
-            
-            if not answer_file:
-                return json.dumps({"error": "Answer file not found"})
-            
-            answer_text = answer_file.read_text(encoding="utf-8")
-            student_name = student_dir.name.split(" - ")[1] if " - " in student_dir.name else "Unknown"
-            
-            # Store in context
-            self.context.store_answer(question_id, student_code, answer_text)
-            
-            return json.dumps({
-                "status": "loaded",
-                "question_id": question_id,
-                "student_code": student_code,
-                "student_name": student_name,
-                "preview": answer_text[:200] + "..." if len(answer_text) > 200 else answer_text,
-                "length": len(answer_text),
-                "word_count": len(answer_text.split()),
-                "message": "Answer loaded into memory. Use assess_all_features to evaluate it."
-            })
-        
-        tools["load_student_answer"] = load_student_answer
         
         # TOOL: Load Checklist (ATOMICO)
         async def load_checklist(question_id: str) -> str:
@@ -188,93 +126,7 @@ class ExamMCPServer:
                 return json.dumps({"error": str(e)})
         
         tools["load_checklist"] = load_checklist
-        
-        # TOOL : Assess All Features
-        async def assess_all_features(question_id: str, student_code: str) -> str:
-            """
-            Assess ALL features for a student's answer in one step.
-            Automatically loads answer and checklist if needed.
-            
-            This is the FASTEST way to get a complete assessment.
-            
-            Use this when you need:
-            - Quick complete assessment
-            - Full score breakdown
-            - All feature evaluations at once
-            
-            Returns: Complete assessment with score and all feature feedback.
-            """
-            from exam.llm_provider import llm_client
-            from exam.assess import TEMPLATE, calculate_score_from_assessments
-            
-            # Ensure answer is loaded
-            if not self.context.get_answer(question_id, student_code):
-                load_result = await load_student_answer(question_id, student_code)
-                result_data = json.loads(load_result)
-                if "error" in result_data:
-                    return load_result
-            
-            # Ensure checklist is loaded
-            if not self.context.get_checklist(question_id):
-                checklist_result = await load_checklist(question_id)
-                result_data = json.loads(checklist_result)
-                if "error" in result_data:
-                    return checklist_result
-            
-            # Get data from context
-            answer_text = self.context.get_answer(question_id, student_code)
-            checklist = self.context.get_checklist(question_id)
-            question = self.questions_store.question(question_id)
-            
-            # Assess all features
-            assessments_list = []
-            assessments_dict = {}
-            
-            for index, feature in enumerate_features(checklist):
-                prompt = TEMPLATE.format(
-                    class_name="FeatureAssessment",
-                    question=question.text,
-                    feature_type=feature.type.value,
-                    feature_verb_ideal=feature.verb_ideal,
-                    feature_verb_actual=feature.verb_actual,
-                    feature=feature.description,
-                    answer=answer_text
-                )
-                
-                llm, _, _ = llm_client(structured_output=FeatureAssessment)
-                result = llm.invoke(prompt)
-                
-                assessments_list.append({
-                    "feature": feature.description,
-                    "feature_type": feature.type.name,
-                    "satisfied": result.satisfied,
-                    "motivation": result.motivation
-                })
-                
-                assessments_dict[feature] = result
-            
-            # Store assessments in context
-            self.context.store_assessments(question_id, student_code, assessments_list)
-            
-            # Calculate score using centralized function
-            score, breakdown, stats = calculate_score_from_assessments(assessments_dict, question.weight)
-            
-            return json.dumps({
-                "question_id": question_id,
-                "student_code": student_code,
-                "assessments": assessments_list,
-                "statistics": stats,
-                "estimated_score": {
-                    "score": score,
-                    "max_score": question.weight,
-                    "percentage": round((score / question.weight * 100) if question.weight > 0 else 0, 1),
-                    "breakdown": breakdown
-                }
-            }, indent=2)
-        
-        tools["assess_all_features"] = assess_all_features
-        
-        # TOOL: Load Exam from YAML
+
         async def load_exam_from_yaml(questions_file: str, responses_file: str) -> str:
             """
             Load an entire exam from YAML files in static/se-exams directory.
@@ -421,9 +273,6 @@ class ExamMCPServer:
                     for student in exam_data["students"]:
                         full_email = student["email"]
 
-                        # Match flessibile:
-                        # 1. Exact match (case insensitive)
-                        # 2. Partial match (inizio email, min 10 chars)
                         if (full_email.lower() == student_email_clean.lower() or
                                 (len(student_email_clean) >= 10 and
                                  full_email.lower().startswith(student_email_clean.lower()))):
@@ -481,23 +330,14 @@ class ExamMCPServer:
                         response_text = student_data["responses"][question_num]
                         
                         # Load checklist if not in context
-                        if not self.context.get_checklist(question["id"]):
-                            checklist = load_answer_cache(q)
-                            if checklist:
-                                self.context.store_checklist(question["id"], checklist)
+                        # if not self.context.get_checklist(question["id"]):
+                        #     checklist = load_answer_cache(q)
+                        #     if checklist:
+                        #         self.context.store_checklist(question["id"], checklist)
                         
                         checklist = self.context.get_checklist(question["id"])
                         if not checklist:
-                            assessments.append({
-                                "question_number": question_num,
-                                "question_id": question["id"],
-                                "question_text": question.get("text", ""),
-                                "status": "no_checklist",
-                                "score": 0.0,
-                                "max_score": question["score"]
-                            })
-                            total_max_score += question["score"]
-                            continue
+                            print("No Checklist found")
                         
                         # Assess features
                         feature_assessments_list = []
@@ -600,7 +440,7 @@ class ExamMCPServer:
                             important_features = [fa for fa in assessment['feature_assessments'] 
                                                 if fa['feature_type'] == 'DETAILS_IMPORTANT']
 
-                            
+
                             if core_features:
                                 f.write("CORE Elements:\n")
                                 for fa in core_features:
@@ -636,77 +476,4 @@ class ExamMCPServer:
                 return json.dumps({"error": str(e), "traceback": traceback.format_exc()})
         
         tools["assess_student_exam"] = assess_student_exam
-        
-        # TOOL: Assess Full Exam Batch
-        async def assess_full_exam(questions_file: str, responses_file: str, max_students: int = None) -> str:
-            """
-            Assess entire exam for all students.
-            
-            Args:
-                questions_file: Path to questions YAML
-                responses_file: Path to responses YAML
-                max_students: Limit number of students (optional, for testing)
-            
-            Returns:
-                Summary of all assessments with statistics
-            """
-            try:
-                # Load exam
-                load_result = await load_exam_from_yaml(questions_file, responses_file)
-                load_data = json.loads(load_result)
-                
-                if "error" in load_data:
-                    return load_result
-                
-                # Get students
-                exam_id = load_data["exam_id"]
-                exam_data = self.context.loaded_exams[exam_id]
-                students = exam_data["students"]
-                
-                if max_students:
-                    students = students[:max_students]
-                
-                # Assess each student
-                results = []
-                for idx, student in enumerate(students):
-                    print(f"[BATCH] Assessing student {idx+1}/{len(students)}...")
-                    
-                    assessment_result = await assess_student_exam(student["email"])
-                    assessment_data = json.loads(assessment_result)
-                    
-                    if "error" not in assessment_data:
-                        results.append({
-                            "student_index": idx + 1,
-                            "email_preview": student["email"][:30] + "...",
-                            "calculated_score": assessment_data["calculated_score"],
-                            "max_score": assessment_data["max_score"],
-                            "percentage": assessment_data["percentage"],
-                            "moodle_grade": assessment_data["moodle_grade"]
-                        })
-                
-                # Statistics
-                scores = [r["calculated_score"] for r in results]
-                avg_score = sum(scores) / len(scores) if scores else 0
-                
-                return json.dumps({
-                    "exam": {
-                        "questions_file": questions_file,
-                        "responses_file": responses_file,
-                        "num_students": len(results)
-                    },
-                    "statistics": {
-                        "average_score": round(avg_score, 2),
-                        "max_score": max(scores) if scores else 0,
-                        "min_score": min(scores) if scores else 0,
-                        "total_possible": results[0]["max_score"] if results else 0
-                    },
-                    "results": results
-                }, indent=2)
-                
-            except Exception as e:
-                import traceback
-                return json.dumps({"error": str(e), "traceback": traceback.format_exc()})
-        
-        tools["assess_full_exam"] = assess_full_exam
-        
         return tools
