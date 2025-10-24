@@ -14,42 +14,42 @@ from exam.solution import Answer, load_cache as load_answer_cache
 @dataclass
 class AssessmentContext:
     """Context condiviso tra tool calls."""
-    
+
     # Cache dei dati caricati
     loaded_answers: Dict[str, str] = field(default_factory=dict)
     loaded_checklists: Dict[str, Answer] = field(default_factory=dict)
-    
+
     # Risultati delle valutazioni
     feature_assessments: Dict[str, list] = field(default_factory=dict)
-    
+
     def get_session_id(self, question_id: str, student_code: str) -> str:
         """Genera un ID univoco per una sessione di valutazione."""
         return f"{question_id}_{student_code}"
-    
+
     def store_answer(self, question_id: str, student_code: str, answer: str):
         """Salva una risposta nel context."""
         key = f"{question_id}_{student_code}"
         self.loaded_answers[key] = answer
         return key
-    
+
     def get_answer(self, question_id: str, student_code: str) -> str | None:
         """Recupera una risposta dal context."""
         key = f"{question_id}_{student_code}"
         return self.loaded_answers.get(key)
-    
+
     def store_checklist(self, question_id: str, checklist: Answer):
         """Salva una checklist nel context."""
         self.loaded_checklists[question_id] = checklist
-    
+
     def get_checklist(self, question_id: str) -> Answer | None:
         """Recupera una checklist dal context."""
         return self.loaded_checklists.get(question_id)
-    
+
     def store_assessments(self, question_id: str, student_code: str, assessments: list):
         """Salva le valutazioni nel context."""
         session_id = self.get_session_id(question_id, student_code)
         self.feature_assessments[session_id] = assessments
-    
+
     def get_assessments(self, question_id: str, student_code: str) -> list | None:
         """Recupera le valutazioni dal context."""
         session_id = self.get_session_id(question_id, student_code)
@@ -58,7 +58,7 @@ class AssessmentContext:
 
 class ExamMCPServer:
     """MCP Server con context condiviso per collaborazione tra tool."""
-    
+
     def __init__(self):
         self.questions_store = get_questions_store()
         self.context = AssessmentContext()
@@ -67,26 +67,26 @@ class ExamMCPServer:
         from exam import DIR_ROOT
         self.evaluations_dir = DIR_ROOT / "evaluations"
         self.evaluations_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Directory for YAML exam files
         self.exams_dir = DIR_ROOT / "static" / "se-exams"
         self.exams_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.tools = self._create_tools()
-    
+
     def _create_tools(self):
         """Create all available tools."""
         tools = {}
-        
+
         # TOOL: Load Checklist (ATOMICO)
         async def load_checklist(question_id: str) -> str:
             """
             Load the assessment checklist for a question into memory.
             The checklist will be available for other tools to use.
-            
+
             Args:
                 question_id: The question ID (e.g., "CI-5")
-            
+
             Returns:
                 JSON with checklist summary
             """
@@ -99,17 +99,17 @@ class ExamMCPServer:
                     "core_count": len(cached.core),
                     "important_count": len(cached.details_important),
                 })
-            
+
             try:
                 question = self.questions_store.question(question_id)
                 checklist = load_answer_cache(question)
-                
+
                 if not checklist:
                     return json.dumps({"error": f"No checklist found for question {question_id}"})
-                
+
                 # Store in context
                 self.context.store_checklist(question_id, checklist)
-                
+
                 return json.dumps({
                     "status": "loaded",
                     "question_id": question_id,
@@ -124,55 +124,88 @@ class ExamMCPServer:
                 })
             except Exception as e:
                 return json.dumps({"error": str(e)})
-        
+
         tools["load_checklist"] = load_checklist
 
-        async def load_exam_from_yaml(questions_file: str, responses_file: str) -> str:
+        async def load_exam_from_yaml(questions_file: str, responses_file: str, grades_file: str = None) -> str:
             """
             Load an entire exam from YAML files in static/se-exams directory.
-            
+
             Args:
                 questions_file: Filename of questions YAML (e.g., "se-2025-06-05-questions.yml")
                 responses_file: Filename of responses YAML (e.g., "se-2025-06-05-responses.yml")
-            
+                grades_file: Optional filename of grades YAML (e.g., "se-2025-06-05-grades.yml")
+
             Files are loaded from static/se-exams/ directory automatically.
-            
+
             Returns:
                 JSON with exam structure
             """
             try:
                 import yaml
-                
+
                 # Check if full path or just filename
                 questions_path = Path(questions_file)
                 if not questions_path.is_absolute():
                     questions_path = self.exams_dir / questions_file
-                
+
                 responses_path = Path(responses_file)
                 if not responses_path.is_absolute():
                     responses_path = self.exams_dir / responses_file
-                
+
                 if not questions_path.exists():
                     return json.dumps({
                         "error": f"Questions file not found: {questions_path}",
                         "searched_in": str(self.exams_dir),
                         "hint": "Use list_available_exams to see available files"
                     })
-                
+
                 if not responses_path.exists():
                     return json.dumps({
                         "error": f"Responses file not found: {responses_path}",
                         "searched_in": str(self.exams_dir),
                         "hint": "Use list_available_exams to see available files"
                     })
-                
+
                 # Load YAML files
                 with open(questions_path, 'r', encoding='utf-8') as f:
                     questions_data = yaml.safe_load(f)
-                
+
                 with open(responses_path, 'r', encoding='utf-8') as f:
                     responses_data = yaml.safe_load(f)
-                
+
+                # Load grades file if provided
+                grades_data = None
+                if grades_file:
+                    grades_path = Path(grades_file)
+                    if not grades_path.is_absolute():
+                        grades_path = self.exams_dir / grades_file
+
+                    if grades_path.exists():
+                        with open(grades_path, 'r', encoding='utf-8') as f:
+                            grades_data = yaml.safe_load(f)
+                        print(f"[LOAD_EXAM] Loaded grades from {grades_path.name}")
+                    else:
+                        print(f"[LOAD_EXAM] Warning: grades file not found: {grades_path}")
+
+                # Create a mapping of email -> grades
+                grades_by_email = {}
+                if grades_data:
+                    for grade_entry in grades_data:
+                        email = grade_entry.get("emailaddress")
+                        if email and grade_entry.get("state") == "Finished":
+                            # Extract individual question grades
+                            question_grades = {}
+                            for i in range(1, 20):  # Support up to 20 questions
+                                grade_key = f"q{i}300"
+                                if grade_key in grade_entry:
+                                    question_grades[i] = float(grade_entry[grade_key])
+
+                            grades_by_email[email] = {
+                                "total_grade": float(grade_entry.get("grade2700", 0)),
+                                "question_grades": question_grades
+                            }
+
                 # Parse questions
                 questions = []
                 for key, value in questions_data.items():
@@ -183,24 +216,24 @@ class ExamMCPServer:
                             "text": value.get("text"),
                             "score": value.get("score", 3.0)
                         })
-                
+
                 # Parse students
                 students = []
                 for student_data in responses_data:
                     if student_data.get("state") != "Finished":
                         continue
-                    
+
                     email = student_data.get("emailaddress", "unknown")
-                    
-                    # Extract responses
+
+                    # Extract responses based on number of questions
                     responses = {}
-                    for i in range(1, 10):
+                    for i in range(1, len(questions) + 1):
                         response_key = f"response{i}"
                         if response_key in student_data:
                             response_text = student_data[response_key]
                             if response_text and response_text.strip() != '-':
                                 responses[i] = response_text
-                    
+
                     students.append({
                         "email": email,
                         "started": student_data.get("startedon"),
@@ -208,9 +241,10 @@ class ExamMCPServer:
                         "time_taken": student_data.get("timetaken"),
                         "moodle_grade": student_data.get("grade2700"),
                         "responses": responses,
-                        "num_responses": len(responses)
+                        "num_responses": len(responses),
+                        "original_grades": grades_by_email.get(email, {})  # Add original grades
                     })
-                
+
                 # Store in context
                 exam_id = f"{questions_path.stem}_{responses_path.stem}"
                 self.context.loaded_exams[exam_id] = {
@@ -219,7 +253,7 @@ class ExamMCPServer:
                     "questions_file": str(questions_path),
                     "responses_file": str(responses_path)
                 }
-                
+
                 return json.dumps({
                     "exam_id": exam_id,
                     "loaded_from": str(self.exams_dir),
@@ -238,13 +272,13 @@ class ExamMCPServer:
                     ],
                     "message": f"Loaded exam with {len(questions)} questions and {len(students)} students from {self.exams_dir}"
                 }, indent=2)
-                
+
             except Exception as e:
                 import traceback
                 return json.dumps({"error": str(e), "traceback": traceback.format_exc()})
-        
+
         tools["load_exam_from_yaml"] = load_exam_from_yaml
-        
+
         # TOOL: Assess Student Exam (REFACTORIZZATO)
         async def assess_student_exam(student_email: str) -> str:
             """
@@ -337,17 +371,46 @@ class ExamMCPServer:
                     f.write(f"STUDENT ASSESSMENT SUMMARY\n")
                     f.write(f"{'='*70}\n\n")
                     f.write(f"Student: {student_email_full}\n")
-                    f.write(f"Score: {result['calculated_score']}/{result['max_score']} ({result['percentage']}%)\n")
-                    f.write(f"Moodle Grade: {student_data.get('moodle_grade', 'N/A')}\n")
-                    f.write(f"Scoring: {result['scoring_system']}\n\n")
+                    f.write(f"Calculated Score: {result['calculated_score']:.2f}/{result['max_score']}\n")
+                    f.write(f"Calculated Percentage: {result['percentage']}%\n")
+
+                    # Add comparison with original grades if available
+                    original_grades = student_data.get("original_grades", {})
+                    if original_grades:
+                        original_total = original_grades.get("total_grade", 0)
+                        f.write(f"Original Moodle Grade: {original_total:.2f}/27.00\n")
+
+                        # Calculate difference
+                        score_diff = result['calculated_score'] - original_total
+                        f.write(f"Difference: {score_diff:+.2f} ")
+                        if abs(score_diff) < 0.5:
+                            f.write("(✓ Very close)\n")
+                        elif abs(score_diff) < 2.0:
+                            f.write("(~ Reasonable)\n")
+                        else:
+                            f.write("(⚠ Significant difference)\n")
+                    else:
+                        f.write(f"Moodle Grade: {student_data.get('moodle_grade', 'N/A')}\n")
+
+                    f.write(f"Scoring System: {result['scoring_system']}\n\n")
                     f.write(f"{'='*70}\n\n")
 
                     for assessment in result["assessments"]:
-                        f.write(f"Question {assessment['question_number']}: {assessment['question_id']}\n")
+                        question_num = assessment['question_number']
+                        f.write(f"Question {question_num}: {assessment['question_id']}\n")
                         f.write(f"{'-'*70}\n")
 
                         if assessment['status'] == 'assessed':
-                            f.write(f"Score: {assessment['score']}/{assessment['max_score']}\n")
+                            f.write(f"Calculated Score: {assessment['score']:.2f}/{assessment['max_score']}\n")
+
+                            # Add comparison with original grade if available
+                            if original_grades and 'question_grades' in original_grades:
+                                orig_q_grade = original_grades['question_grades'].get(question_num)
+                                if orig_q_grade is not None:
+                                    diff = assessment['score'] - orig_q_grade
+                                    f.write(f"Original Grade: {orig_q_grade:.2f}/{assessment['max_score']}\n")
+                                    f.write(f"Difference: {diff:+.2f}\n")
+
                             f.write(f"Breakdown: {assessment['breakdown']}\n\n")
 
                             # Raggruppa per tipo
@@ -374,20 +437,20 @@ class ExamMCPServer:
                             f.write(f"Status: {assessment['status']}\n")
                             if 'error' in assessment:
                                 f.write(f"Error: {assessment['error']}\n")
-                        
+
                         f.write(f"\n{'='*70}\n\n")
-                
+
                 # Aggiungi info sui file salvati al risultato
                 result["saved_files"] = {
                     "assessment": str(assessment_file),
                     "summary": str(summary_file)
                 }
-                
+
                 return json.dumps(result, indent=2)
-                
+
             except Exception as e:
                 import traceback
                 return json.dumps({"error": str(e), "traceback": traceback.format_exc()})
-        
+
         tools["assess_student_exam"] = assess_student_exam
         return tools

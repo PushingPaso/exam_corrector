@@ -47,9 +47,10 @@ class WorkerState(TypedDict):
 class TrueParallelExamAssessment:
     """Sistema con workers VERAMENTE paralleli usando Send."""
 
-    def __init__(self, num_workers: int = 3):
+    def __init__(self, exam_date: str, num_workers: int = 3):
         self.mcp_server = ExamMCPServer()
         self.num_workers = num_workers
+        self.exam_date = exam_date
         self.graph = self._build_graph()
 
     # ------------------------------------------------------------------------
@@ -59,18 +60,29 @@ class TrueParallelExamAssessment:
     async def setup_node(self, state: MultiAgentAssessmentState) -> dict:
         """Carica esame e checklist."""
         print("\n" + "=" * 70)
-        print("[SETUP] Caricamento esame e checklist...")
+        print(f"[SETUP] Caricamento esame del {self.exam_date}...")
         print("=" * 70)
 
         import json
 
+        # Costruisce i nomi dei file basandosi sulla data
+        questions_file = f"se-{self.exam_date}-questions.yml"
+        responses_file = f"se-{self.exam_date}-responses.yml"
+        grades_file = f"se-{self.exam_date}-grades.yml"  # Add grades file
+
+        print(f"[SETUP] File domande: {questions_file}")
+        print(f"[SETUP] File risposte: {responses_file}")
+        print(f"[SETUP] File voti: {grades_file}")
+
         result = await self.mcp_server.tools["load_exam_from_yaml"](
-            "se-2025-06-05-questions.yml",
-            "se-2025-06-05-responses.yml"
+            questions_file,
+            responses_file,
+            grades_file  # Pass grades file
         )
         data = json.loads(result)
 
         if "error" in data:
+            print(f"[SETUP] ✗ Errore: {data['error']}")
             return {"exam_loaded": False}
 
         exam_id = data["exam_id"]
@@ -143,7 +155,7 @@ class TrueParallelExamAssessment:
             # Crea un Send per ogni worker
             sends.append(Send("worker", worker_state))
 
-        print(f"[DISPATCHER] 🚀 Lancio di {len(sends)} workers in parallelo!\n")
+        print(f"[DISPATCHER] Lancio di {len(sends)} workers in parallelo!\n")
         return sends
 
     # ------------------------------------------------------------------------
@@ -155,7 +167,7 @@ class TrueParallelExamAssessment:
         worker_id = state["worker_id"]
         batch = state["batch"]
 
-        print(f"[WORKER {worker_id}] 🚀 AVVIO in parallelo! ({len(batch)} studenti)")
+        print(f"[WORKER {worker_id}] AVVIO in parallelo! ({len(batch)} studenti)")
 
         import json
         start = time.time()
@@ -177,13 +189,13 @@ class TrueParallelExamAssessment:
                         "max_score": assessment_data["max_score"],
                         "percentage": assessment_data["percentage"]
                     })
-                    print(f"[WORKER {worker_id}] ✓ Score: {assessment_data['calculated_score']:.2f}")
+                    print(f"[WORKER {worker_id}] Score: {assessment_data['calculated_score']:.2f}")
 
             except Exception as e:
                 print(f"[WORKER {worker_id}] ✗ Errore: {e}")
 
         elapsed = time.time() - start
-        print(f"[WORKER {worker_id}] ✅ COMPLETATO in {elapsed:.2f}s ({len(results)} valutazioni)\n")
+        print(f"[WORKER {worker_id+1}] COMPLETATO in {elapsed:.2f}s ({len(results)} valutazioni)\n")
 
         # Ritorna dict che verrà aggiunto allo stato globale grazie a operator.add
         return {"assessments": results}
@@ -218,6 +230,8 @@ class TrueParallelExamAssessment:
 {'=' * 70}
 REPORT VALUTAZIONE MULTI-AGENTE PARALLELO (Send API)
 {'=' * 70}
+
+ESAME DEL: {self.exam_date}
 
 CONFIGURAZIONE:
   Workers in parallelo: {state['num_workers']}
@@ -291,6 +305,7 @@ STATISTICHE PER WORKER:
 
         print("\n" + "=" * 70)
         print("MULTI-AGENT PARALLEL ASSESSMENT (Send API)")
+        print(f"Esame del: {self.exam_date}")
         print(f"Workers: {self.num_workers}")
         print("=" * 70)
 
@@ -328,12 +343,20 @@ async def main():
         print("\nGROQ_API_KEY not set!")
         return
 
-    print("\n🚀 True Parallel Multi-Agent Assessment (Send API)")
+    print("\n True Parallel Multi-Agent Assessment (Send API)")
     print("=" * 70)
 
-    num_workers = int(input("\nNumero di workers (default 3): ") or "3")
+    # Chiedi la data dell'esame
+    exam_date = input("\nData dell'esame (formato YYYY-MM-DD, es. 2025-06-05): ").strip()
 
-    system = TrueParallelExamAssessment(num_workers=num_workers)
+    # Validazione base del formato
+    if not exam_date:
+        exam_date = "2025-06-05"  # Default
+        print(f"Usando data di default: {exam_date}")
+
+    num_workers = int(input("Numero di workers (default 3): ") or "3")
+
+    system = TrueParallelExamAssessment(exam_date=exam_date, num_workers=num_workers)
     await system.run()
 
 
