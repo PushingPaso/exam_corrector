@@ -13,7 +13,7 @@ def ensure_groq_api_key():
     return os.environ[KEY_GROQ_API_KEY]
 
 
-def llm_client(model_name: str = "openai/gpt-oss-120b", model_provider: str = "groq", structured_output: type = None):
+def llm_client(model_name: str = "llama-3.3-70b-versatile", model_provider: str = "groq", structured_output: type = None):
     """
     Creates an LLM client configured for Groq.
     

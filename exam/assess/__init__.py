@@ -295,7 +295,10 @@ class Assessor:
     def calculate_score(self, assessments: dict, max_score: float) -> tuple[float, str, dict]:
         """
         Calcola il punteggio da un dizionario di assessment.
-        Sistema: 70% Core + 30% Important
+        Sistema:
+        - 70% Core + 30% Important (se entrambi presenti)
+        - 100% Core (se mancano Important)
+        - 100% Important (se mancano Core - caso raro)
 
         Args:
             assessments: dict[Feature, FeatureAssessment]
@@ -316,9 +319,29 @@ class Assessor:
         important_satisfied = sum(1 for f, a in assessments.items()
                                   if f.type == FeatureType.DETAILS_IMPORTANT and a.satisfied)
 
+        # Determina i pesi in base a cosa è presente
+        if core_total > 0 and important_total > 0:
+            # Entrambi presenti: 70% core + 30% important
+            core_weight = 0.70
+            important_weight = 0.30
+            scoring_system = "70% Core + 30% Important"
+        elif core_total > 0:
+            # Solo core: 100% core
+            core_weight = 1.0
+            important_weight = 0.0
+            scoring_system = "100% Core (no Important details)"
+        elif important_total > 0:
+            # Solo important (caso raro): 100% important
+            core_weight = 0.0
+            important_weight = 1.0
+            scoring_system = "100% Important (no Core - unusual)"
+        else:
+            # Nessuna feature
+            return 0.0, "No features assessed", {}
+
         # Calcolo percentuali per categoria
-        core_percentage = (core_satisfied / core_total * 0.70) if core_total > 0 else 0.0
-        important_percentage = (important_satisfied / important_total * 0.30) if important_total > 0 else 0.30
+        core_percentage = (core_satisfied / core_total * core_weight) if core_total > 0 else 0.0
+        important_percentage = (important_satisfied / important_total * important_weight) if important_total > 0 else 0.0
 
         # Percentuale finale
         final_percentage = core_percentage + important_percentage
@@ -330,32 +353,40 @@ class Assessor:
         breakdown_parts = []
 
         if core_total > 0:
+            core_raw_pct = (core_satisfied / core_total * 100)
+            core_weighted_pct = (core_percentage * 100)
             breakdown_parts.append(
                 f"Core: {core_satisfied}/{core_total} "
-                f"({core_percentage / 0.70 * 100:.0f}% → {core_percentage * 100:.0f}%)"
+                f"({core_raw_pct:.0f}% → {core_weighted_pct:.0f}%)"
             )
 
         if important_total > 0:
+            important_raw_pct = (important_satisfied / important_total * 100)
+            important_weighted_pct = (important_percentage * 100)
             breakdown_parts.append(
                 f"Important: {important_satisfied}/{important_total} "
-                f"({important_percentage / 0.20 * 100:.0f}% → {important_percentage * 100:.0f}%)"
+                f"({important_raw_pct:.0f}% → {important_weighted_pct:.0f}%)"
             )
 
         breakdown = " + ".join(breakdown_parts)
         breakdown += f" = {final_percentage * 100:.0f}% of {max_score} = {score}"
+        breakdown += f" [{scoring_system}]"
 
         # Statistiche dettagliate
         stats = {
             "core": {
                 "total": core_total,
                 "satisfied": core_satisfied,
-                "percentage": round((core_satisfied / core_total * 100) if core_total > 0 else 0, 1)
+                "percentage": round((core_satisfied / core_total * 100) if core_total > 0 else 0, 1),
+                "weight": core_weight
             },
             "details_important": {
                 "total": important_total,
                 "satisfied": important_satisfied,
-                "percentage": round((important_satisfied / important_total * 100) if important_total > 0 else 0, 1)
-            }
+                "percentage": round((important_satisfied / important_total * 100) if important_total > 0 else 0, 1),
+                "weight": important_weight
+            },
+            "scoring_system": scoring_system
         }
 
         return score, breakdown, stats

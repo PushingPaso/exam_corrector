@@ -191,15 +191,25 @@ class ExamMCPServer:
                 # Create a mapping of email -> grades
                 grades_by_email = {}
                 if grades_data:
+                    import re
+                    # Pattern per trovare chiavi come q1300, q2400, q3500, etc.
+                    question_grade_pattern = re.compile(r'^q(\d+)\d{3}$')
+
                     for grade_entry in grades_data:
                         email = grade_entry.get("emailaddress")
                         if email and grade_entry.get("state") == "Finished":
                             # Extract individual question grades
                             question_grades = {}
-                            for i in range(1, 20):  # Support up to 20 questions
-                                grade_key = f"q{i}300"
-                                if grade_key in grade_entry:
-                                    question_grades[i] = float(grade_entry[grade_key])
+
+                            # Cerca tutte le chiavi che matchano il pattern q{numero}{3cifre}
+                            for key, value in grade_entry.items():
+                                match = question_grade_pattern.match(key)
+                                if match:
+                                    question_num = int(match.group(1))
+                                    try:
+                                        question_grades[question_num] = float(value)
+                                    except (ValueError, TypeError):
+                                        pass  # Skip invalid grades
 
                             grades_by_email[email] = {
                                 "total_grade": float(grade_entry.get("grade2700", 0)),
@@ -384,11 +394,11 @@ class ExamMCPServer:
                         score_diff = result['calculated_score'] - original_total
                         f.write(f"Difference: {score_diff:+.2f} ")
                         if abs(score_diff) < 0.5:
-                            f.write("(✓ Very close)\n")
+                            f.write("( Very close)\n")
                         elif abs(score_diff) < 2.0:
-                            f.write("(~ Reasonable)\n")
+                            f.write("( Reasonable)\n")
                         else:
-                            f.write("(⚠ Significant difference)\n")
+                            f.write("(Significant difference)\n")
                     else:
                         f.write(f"Moodle Grade: {student_data.get('moodle_grade', 'N/A')}\n")
 
