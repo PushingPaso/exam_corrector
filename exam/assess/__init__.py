@@ -202,7 +202,8 @@ class Assessor:
             student_responses: dict,
             questions_store,
             context,
-            save_results: bool = True
+            save_results: bool = True,
+            original_grades: dict = None  # ← AGGIUNTO!
     ) -> dict:
         """
         Valuta tutte le risposte di uno studente.
@@ -304,7 +305,8 @@ class Assessor:
             "max_score": total_max_score,
             "percentage": round((total_score / total_max_score * 100) if total_max_score > 0 else 0, 1),
             "scoring_system": "70% Core + 30% Important_Details",
-            "assessments": assessments
+            "assessments": assessments,
+            "original_grades": original_grades if original_grades else {}
         }
 
         # =========================================================
@@ -366,13 +368,7 @@ class Assessor:
         lines.append(f"Calculated Percentage: {result['percentage']}%")
 
         # Get original grades if available from first assessment
-        original_grades = {}
-        if result['assessments']:
-            # Try to extract from student data (if passed through)
-            for assessment in result['assessments']:
-                if 'original_grade' in assessment:
-                    original_grades = assessment.get('original_grades', {})
-                    break
+        original_grades = result.get('original_grades', {})
 
         if original_grades:
             original_total = original_grades.get("total_grade", 0)

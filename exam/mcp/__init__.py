@@ -262,7 +262,8 @@ class ExamMCPServer:
                     student_responses=student_data["responses"],
                     questions_store=self.questions_store,
                     context=self.context,
-                    save_results=True  # Assessor salverà i risultati
+                    save_results=True,
+                    original_grades=student_data.get("original_grades", {})  # ← AGGIUNTO!
                 )
 
                 # Aggiungi metadati Moodle (ancora gestito qui per ora)
