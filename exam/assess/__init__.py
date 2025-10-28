@@ -380,9 +380,7 @@ class Assessor:
                 diff_text += "( Very close)"
             elif abs(score_diff) < 2.0:
                 diff_text += "( Reasonable)"
-            else:
-                diff_text += "(Significant difference)"
-            lines.append(diff_text)
+
 
         lines.append(f"Scoring System: {result['scoring_system']}")
         lines.append("")
