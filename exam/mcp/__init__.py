@@ -1,5 +1,6 @@
 """
 MCP Server con Context Condiviso per collaborazione tra tool.
+REFACTORIZZATO: Logica di business spostata nei moduli appropriati.
 """
 
 import json
@@ -7,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict
 
-from exam import get_questions_store
+from exam import get_questions_store, load_exam_from_yaml
 from exam.solution import Answer, load_cache as load_answer_cache
 
 
@@ -57,7 +58,10 @@ class AssessmentContext:
 
 
 class ExamMCPServer:
-    """MCP Server con context condiviso per collaborazione tra tool."""
+    """
+    MCP Server con context condiviso per collaborazione tra tool.
+    REFACTORIZZATO: Ora è solo un layer di orchestrazione.
+    """
 
     def __init__(self):
         self.questions_store = get_questions_store()
@@ -127,9 +131,12 @@ class ExamMCPServer:
 
         tools["load_checklist"] = load_checklist
 
-        async def load_exam_from_yaml(questions_file: str, responses_file: str, grades_file: str = None) -> str:
+        # TOOL: Load Exam from YAML (REFACTORIZZATO)
+        async def load_exam_from_yaml_tool(questions_file: str, responses_file: str, grades_file: str = None) -> str:
             """
             Load an entire exam from YAML files in static/se-exams directory.
+
+            REFACTORIZZATO: Ora usa la funzione load_exam_from_yaml dal modulo exam.
 
             Args:
                 questions_file: Filename of questions YAML (e.g., "se-2025-06-05-questions.yml")
@@ -142,160 +149,56 @@ class ExamMCPServer:
                 JSON with exam structure
             """
             try:
-                import yaml
-
-                # Check if full path or just filename
-                questions_path = Path(questions_file)
-                if not questions_path.is_absolute():
-                    questions_path = self.exams_dir / questions_file
-
-                responses_path = Path(responses_file)
-                if not responses_path.is_absolute():
-                    responses_path = self.exams_dir / responses_file
-
-                if not questions_path.exists():
-                    return json.dumps({
-                        "error": f"Questions file not found: {questions_path}",
-                        "searched_in": str(self.exams_dir),
-                        "hint": "Use list_available_exams to see available files"
-                    })
-
-                if not responses_path.exists():
-                    return json.dumps({
-                        "error": f"Responses file not found: {responses_path}",
-                        "searched_in": str(self.exams_dir),
-                        "hint": "Use list_available_exams to see available files"
-                    })
-
-                # Load YAML files
-                with open(questions_path, 'r', encoding='utf-8') as f:
-                    questions_data = yaml.safe_load(f)
-
-                with open(responses_path, 'r', encoding='utf-8') as f:
-                    responses_data = yaml.safe_load(f)
-
-                # Load grades file if provided
-                grades_data = None
-                if grades_file:
-                    grades_path = Path(grades_file)
-                    if not grades_path.is_absolute():
-                        grades_path = self.exams_dir / grades_file
-
-                    if grades_path.exists():
-                        with open(grades_path, 'r', encoding='utf-8') as f:
-                            grades_data = yaml.safe_load(f)
-                        print(f"[LOAD_EXAM] Loaded grades from {grades_path.name}")
-                    else:
-                        print(f"[LOAD_EXAM] Warning: grades file not found: {grades_path}")
-
-                # Create a mapping of email -> grades
-                grades_by_email = {}
-                if grades_data:
-                    import re
-                    # Pattern per trovare chiavi come q1300, q2400, q3500, etc.
-                    question_grade_pattern = re.compile(r'^q(\d+)\d{3}$')
-
-                    for grade_entry in grades_data:
-                        email = grade_entry.get("emailaddress")
-                        if email and grade_entry.get("state") == "Finished":
-                            # Extract individual question grades
-                            question_grades = {}
-
-                            # Cerca tutte le chiavi che matchano il pattern q{numero}{3cifre}
-                            for key, value in grade_entry.items():
-                                match = question_grade_pattern.match(key)
-                                if match:
-                                    question_num = int(match.group(1))
-                                    try:
-                                        question_grades[question_num] = float(value)
-                                    except (ValueError, TypeError):
-                                        pass  # Skip invalid grades
-
-                            grades_by_email[email] = {
-                                "total_grade": float(grade_entry.get("grade2700", 0)),
-                                "question_grades": question_grades
-                            }
-
-                # Parse questions
-                questions = []
-                for key, value in questions_data.items():
-                    if key.startswith("Question"):
-                        questions.append({
-                            "number": key,
-                            "id": value.get("id"),
-                            "text": value.get("text"),
-                            "score": value.get("score", 3.0)
-                        })
-
-                # Parse students
-                students = []
-                for student_data in responses_data:
-                    if student_data.get("state") != "Finished":
-                        continue
-
-                    email = student_data.get("emailaddress", "unknown")
-
-                    # Extract responses based on number of questions
-                    responses = {}
-                    for i in range(1, len(questions) + 1):
-                        response_key = f"response{i}"
-                        if response_key in student_data:
-                            response_text = student_data[response_key]
-                            if response_text and response_text.strip() != '-':
-                                responses[i] = response_text
-
-                    students.append({
-                        "email": email,
-                        "started": student_data.get("startedon"),
-                        "completed": student_data.get("completed"),
-                        "time_taken": student_data.get("timetaken"),
-                        "moodle_grade": student_data.get("grade2700"),
-                        "responses": responses,
-                        "num_responses": len(responses),
-                        "original_grades": grades_by_email.get(email, {})  # Add original grades
-                    })
+                # Usa la funzione refactorizzata
+                exam_data = load_exam_from_yaml(
+                    questions_file=questions_file,
+                    responses_file=responses_file,
+                    grades_file=grades_file,
+                    exams_dir=self.exams_dir
+                )
 
                 # Store in context
-                exam_id = f"{questions_path.stem}_{responses_path.stem}"
-                self.context.loaded_exams[exam_id] = {
-                    "questions": questions,
-                    "students": students,
-                    "questions_file": str(questions_path),
-                    "responses_file": str(responses_path)
-                }
+                exam_id = exam_data["exam_id"]
+                self.context.loaded_exams[exam_id] = exam_data
 
                 return json.dumps({
                     "exam_id": exam_id,
                     "loaded_from": str(self.exams_dir),
-                    "questions_file": questions_path.name,
-                    "responses_file": responses_path.name,
-                    "num_questions": len(questions),
-                    "num_students": len(students),
-                    "questions": questions,
+                    "questions_file": Path(exam_data["files"]["questions"]).name,
+                    "responses_file": Path(exam_data["files"]["responses"]).name,
+                    "grades_file": Path(exam_data["files"]["grades"]).name if exam_data["files"]["grades"] else None,
+                    "num_questions": len(exam_data["questions"]),
+                    "num_students": len(exam_data["students"]),
+                    "questions": exam_data["questions"],
                     "students_preview": [
                         {
-                            "email": s["email"] ,
+                            "email": s["email"],
                             "num_responses": s["num_responses"],
                             "time_taken": s["time_taken"]
                         }
-                        for s in students[:5]
+                        for s in exam_data["students"][:5]
                     ],
-                    "message": f"Loaded exam with {len(questions)} questions and {len(students)} students from {self.exams_dir}"
+                    "message": f"Loaded exam with {len(exam_data['questions'])} questions and {len(exam_data['students'])} students from {self.exams_dir}"
                 }, indent=2)
 
+            except FileNotFoundError as e:
+                return json.dumps({
+                    "error": str(e),
+                    "hint": "Use list_available_exams to see available files"
+                })
             except Exception as e:
                 import traceback
                 return json.dumps({"error": str(e), "traceback": traceback.format_exc()})
 
-        tools["load_exam_from_yaml"] = load_exam_from_yaml
+        tools["load_exam_from_yaml"] = load_exam_from_yaml_tool
 
         # TOOL: Assess Student Exam (REFACTORIZZATO)
         async def assess_student_exam(student_email: str) -> str:
             """
             Assess all responses for a single student from loaded exam.
-            Results are automatically saved to evaluations/{email_hash}/assessment.json
+            Results are automatically saved to evaluations/{email}/assessment.json
 
-            REFACTORIZZATO: Ora usa la classe Assessor per la logica di valutazione.
+            REFACTORIZZATO: Ora la classe Assessor gestisce anche il salvataggio.
 
             Args:
                 student_email: Student's email (can use first 20 chars)
@@ -344,117 +247,26 @@ class ExamMCPServer:
 
                 # Usa matched_email (email completa) per tutto il resto
                 student_email_full = matched_email
-                student_dir = self.evaluations_dir / student_email_full
-                student_dir.mkdir(parents=True, exist_ok=True)
 
                 print(f"[ASSESS] Matched student: {student_email_full}")
 
                 # =========================================================
-                # REFACTORING: Usa la classe Assessor invece di codice inline
+                # REFACTORING: Assessor ora gestisce tutto (valutazione + salvataggio)
                 # =========================================================
 
-                assessor = Assessor()
+                assessor = Assessor(evaluations_dir=self.evaluations_dir)
 
                 result = await assessor.assess_student_exam(
                     student_email=student_email_full,
                     exam_questions=questions,
                     student_responses=student_data["responses"],
                     questions_store=self.questions_store,
-                    context=self.context
+                    context=self.context,
+                    save_results=True  # Assessor salverà i risultati
                 )
 
-                # Aggiungi metadati Moodle
+                # Aggiungi metadati Moodle (ancora gestito qui per ora)
                 result["moodle_grade"] = student_data.get("moodle_grade")
-
-                # =========================================================
-                # Fine refactoring - il resto è solo salvataggio file
-                # =========================================================
-
-                # Salva assessment completo in JSON
-                assessment_file = student_dir / "assessment.json"
-                with open(assessment_file, 'w', encoding='utf-8') as f:
-                    json.dump(result, f, indent=2, ensure_ascii=False)
-
-                # Salva anche un summary leggibile
-                summary_file = student_dir / "summary.txt"
-                with open(summary_file, 'w', encoding='utf-8') as f:
-                    f.write(f"STUDENT ASSESSMENT SUMMARY\n")
-                    f.write(f"{'='*70}\n\n")
-                    f.write(f"Student: {student_email_full}\n")
-                    f.write(f"Calculated Score: {result['calculated_score']:.2f}/{result['max_score']}\n")
-                    f.write(f"Calculated Percentage: {result['percentage']}%\n")
-
-                    # Add comparison with original grades if available
-                    original_grades = student_data.get("original_grades", {})
-                    if original_grades:
-                        original_total = original_grades.get("total_grade", 0)
-                        f.write(f"Original Moodle Grade: {original_total:.2f}/27.00\n")
-
-                        # Calculate difference
-                        score_diff = result['calculated_score'] - original_total
-                        f.write(f"Difference: {score_diff:+.2f} ")
-                        if abs(score_diff) < 0.5:
-                            f.write("( Very close)\n")
-                        elif abs(score_diff) < 2.0:
-                            f.write("( Reasonable)\n")
-                        else:
-                            f.write("(Significant difference)\n")
-                    else:
-                        f.write(f"Moodle Grade: {student_data.get('moodle_grade', 'N/A')}\n")
-
-                    f.write(f"Scoring System: {result['scoring_system']}\n\n")
-                    f.write(f"{'='*70}\n\n")
-
-                    for assessment in result["assessments"]:
-                        question_num = assessment['question_number']
-                        f.write(f"Question {question_num}: {assessment['question_id']}\n")
-                        f.write(f"{'-'*70}\n")
-
-                        if assessment['status'] == 'assessed':
-                            f.write(f"Calculated Score: {assessment['score']:.2f}/{assessment['max_score']}\n")
-
-                            # Add comparison with original grade if available
-                            if original_grades and 'question_grades' in original_grades:
-                                orig_q_grade = original_grades['question_grades'].get(question_num)
-                                if orig_q_grade is not None:
-                                    diff = assessment['score'] - orig_q_grade
-                                    f.write(f"Original Grade: {orig_q_grade:.2f}/{assessment['max_score']}\n")
-                                    f.write(f"Difference: {diff:+.2f}\n")
-
-                            f.write(f"Breakdown: {assessment['breakdown']}\n\n")
-
-                            # Raggruppa per tipo
-                            core_features = [fa for fa in assessment['feature_assessments']
-                                        if fa['feature_type'] == 'CORE']
-                            important_features = [fa for fa in assessment['feature_assessments']
-                                                if fa['feature_type'] == 'DETAILS_IMPORTANT']
-
-                            if core_features:
-                                f.write("CORE Elements:\n")
-                                for fa in core_features:
-                                    status = "✓ OK" if fa['satisfied'] else "✗ MISSING"
-                                    f.write(f"  [{status}] {fa['feature']}\n")
-                                    f.write(f"       {fa['motivation']}\n\n")
-
-                            if important_features:
-                                f.write("Important Details:\n")
-                                for fa in important_features:
-                                    status = "✓ OK" if fa['satisfied'] else "✗ MISSING"
-                                    f.write(f"  [{status}] {fa['feature']}\n")
-                                    f.write(f"       {fa['motivation']}\n\n")
-
-                        else:
-                            f.write(f"Status: {assessment['status']}\n")
-                            if 'error' in assessment:
-                                f.write(f"Error: {assessment['error']}\n")
-
-                        f.write(f"\n{'='*70}\n\n")
-
-                # Aggiungi info sui file salvati al risultato
-                result["saved_files"] = {
-                    "assessment": str(assessment_file),
-                    "summary": str(summary_file)
-                }
 
                 return json.dumps(result, indent=2)
 
@@ -463,4 +275,5 @@ class ExamMCPServer:
                 return json.dumps({"error": str(e), "traceback": traceback.format_exc()})
 
         tools["assess_student_exam"] = assess_student_exam
+
         return tools

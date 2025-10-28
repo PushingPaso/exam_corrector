@@ -77,7 +77,7 @@ class TrueParallelExamAssessment:
         result = await self.mcp_server.tools["load_exam_from_yaml"](
             questions_file,
             responses_file,
-            grades_file  # Pass grades file
+            grades_file
         )
         data = json.loads(result)
 
@@ -88,7 +88,7 @@ class TrueParallelExamAssessment:
         exam_id = data["exam_id"]
         exam_data = self.mcp_server.context.loaded_exams[exam_id]
 
-        print(f"[SETUP] ✓ Caricati {len(exam_data['students'])} studenti")
+        print(f"[SETUP] Caricati {len(exam_data['students'])} studenti")
 
         # Carica checklist in parallelo
         checklist_tasks = [
@@ -164,7 +164,7 @@ class TrueParallelExamAssessment:
 
     async def worker_node(self, state: WorkerState) -> dict:
         """Worker che valuta il suo batch."""
-        worker_id = state["worker_id"]
+        worker_id = state["worker_id"] + 1
         batch = state["batch"]
 
         print(f"[WORKER {worker_id}] AVVIO in parallelo! ({len(batch)} studenti)")

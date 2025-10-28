@@ -4,7 +4,7 @@ MCP Client con sistema di tool collaborativi.
 
 import asyncio
 import os
-from pathlib import Path
+
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate

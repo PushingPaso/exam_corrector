@@ -1,8 +1,10 @@
 import os
 import re
 import sys
+import json
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -85,18 +87,26 @@ class FeatureAssessment(BaseModel):
 class Assessor:
     """
     Classe per la valutazione strutturata delle risposte degli studenti.
-    Separa la logica di assessment dal layer MCP per una migliore modularità.
+    Include logica di assessment E salvataggio dei risultati.
     """
 
-    def __init__(self):
+    def __init__(self, evaluations_dir=None):
         """
         Inizializza l'assessor con il modello LLM specificato.
 
         Args:
-            model_name: Nome del modello da usare (default: llama-3.3-70b-versatile)
+            evaluations_dir: Directory per salvare le valutazioni (default: DIR_ROOT/evaluations)
         """
         from exam.llm_provider import llm_client
         self.llm_client_func = llm_client
+
+        # Setup evaluations directory
+        if evaluations_dir is None:
+            self.evaluations_dir = DIR_ROOT / "evaluations"
+        else:
+            self.evaluations_dir = Path(evaluations_dir)
+
+        self.evaluations_dir.mkdir(parents=True, exist_ok=True)
 
     async def assess_single_answer(
             self,
@@ -191,10 +201,13 @@ class Assessor:
             exam_questions: list,
             student_responses: dict,
             questions_store,
-            context
+            context,
+            save_results: bool = True
     ) -> dict:
         """
         Valuta tutte le risposte di uno studente.
+
+        REFACTORIZZATO: Ora include la logica di salvataggio dei risultati.
 
         Args:
             student_email: Email dello studente
@@ -202,6 +215,7 @@ class Assessor:
             student_responses: Dict {question_number: response_text}
             questions_store: QuestionsStore instance
             context: AssessmentContext per accedere alle checklist
+            save_results: Se True, salva i risultati su file (default: True)
 
         Returns:
             dict con:
@@ -211,6 +225,7 @@ class Assessor:
                 - percentage: float
                 - scoring_system: str
                 - assessments: list di assessment per ogni domanda
+                - saved_files: dict con percorsi dei file salvati (se save_results=True)
         """
         from exam.solution import load_cache as load_answer_cache
 
@@ -283,7 +298,7 @@ class Assessor:
                 })
                 total_max_score += question_info["score"]
 
-        return {
+        result = {
             "student_email": student_email,
             "calculated_score": total_score,
             "max_score": total_max_score,
@@ -291,6 +306,144 @@ class Assessor:
             "scoring_system": "70% Core + 30% Important_Details",
             "assessments": assessments
         }
+
+        # =========================================================
+        # NUOVA LOGICA: Salvataggio risultati (spostata da MCP)
+        # =========================================================
+        if save_results:
+            saved_files = self._save_assessment_results(student_email, result, exam_questions)
+            result["saved_files"] = saved_files
+
+        return result
+
+    def _save_assessment_results(self, student_email: str, result: dict, exam_questions: list) -> dict:
+        """
+        Salva i risultati della valutazione su file.
+
+        NUOVA FUNZIONE: Logica di salvataggio estratta da MCP server.
+
+        Args:
+            student_email: Email dello studente
+            result: Dizionario con i risultati della valutazione
+            exam_questions: Lista delle domande dell'esame (per original grades)
+
+        Returns:
+            dict con percorsi dei file salvati
+        """
+        # Crea directory studente
+        student_dir = self.evaluations_dir / student_email
+        student_dir.mkdir(parents=True, exist_ok=True)
+
+        # Salva assessment completo in JSON
+        assessment_file = student_dir / "assessment.json"
+        with open(assessment_file, 'w', encoding='utf-8') as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
+
+        # Salva summary leggibile
+        summary_file = student_dir / "summary.txt"
+        summary_content = self._generate_summary_text(student_email, result, exam_questions)
+
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            f.write(summary_content)
+
+        return {
+            "assessment": str(assessment_file),
+            "summary": str(summary_file)
+        }
+
+    def _generate_summary_text(self, student_email: str, result: dict, exam_questions: list) -> str:
+        """
+        Genera il testo del summary leggibile.
+
+        NUOVA FUNZIONE: Logica di generazione summary estratta da MCP server.
+        """
+        lines = []
+        lines.append("STUDENT ASSESSMENT SUMMARY")
+        lines.append("=" * 70)
+        lines.append("")
+        lines.append(f"Student: {student_email}")
+        lines.append(f"Calculated Score: {result['calculated_score']:.2f}/{result['max_score']}")
+        lines.append(f"Calculated Percentage: {result['percentage']}%")
+
+        # Get original grades if available from first assessment
+        original_grades = {}
+        if result['assessments']:
+            # Try to extract from student data (if passed through)
+            for assessment in result['assessments']:
+                if 'original_grade' in assessment:
+                    original_grades = assessment.get('original_grades', {})
+                    break
+
+        if original_grades:
+            original_total = original_grades.get("total_grade", 0)
+            lines.append(f"Original Moodle Grade: {original_total:.2f}/27.00")
+
+            score_diff = result['calculated_score'] - original_total
+            diff_text = f"Difference: {score_diff:+.2f} "
+            if abs(score_diff) < 0.5:
+                diff_text += "( Very close)"
+            elif abs(score_diff) < 2.0:
+                diff_text += "( Reasonable)"
+            else:
+                diff_text += "(Significant difference)"
+            lines.append(diff_text)
+
+        lines.append(f"Scoring System: {result['scoring_system']}")
+        lines.append("")
+        lines.append("=" * 70)
+        lines.append("")
+
+        for assessment in result["assessments"]:
+            question_num = assessment['question_number']
+            lines.append(f"Question {question_num}: {assessment['question_id']}")
+            lines.append("-" * 70)
+
+            if assessment['status'] == 'assessed':
+                lines.append(f"Calculated Score: {assessment['score']:.2f}/{assessment['max_score']}")
+
+                # Add comparison with original grade if available
+                if original_grades and 'question_grades' in original_grades:
+                    orig_q_grade = original_grades['question_grades'].get(question_num)
+                    if orig_q_grade is not None:
+                        diff = assessment['score'] - orig_q_grade
+                        lines.append(f"Original Grade: {orig_q_grade:.2f}/{assessment['max_score']}")
+                        lines.append(f"Difference: {diff:+.2f}")
+
+                lines.append(f"Breakdown: {assessment['breakdown']}")
+                lines.append("")
+
+                # Raggruppa per tipo
+                core_features = [fa for fa in assessment['feature_assessments']
+                                 if fa['feature_type'] == 'CORE']
+                important_features = [fa for fa in assessment['feature_assessments']
+                                      if fa['feature_type'] == 'DETAILS_IMPORTANT']
+
+                if core_features:
+                    lines.append("CORE Elements:")
+                    for fa in core_features:
+                        status = "✓ OK" if fa['satisfied'] else "✗ MISSING"
+                        lines.append(f"  [{status}] {fa['feature']}")
+                        lines.append(f"       {fa['motivation']}")
+                        lines.append("")
+
+                if important_features:
+                    lines.append("Important Details:")
+                    for fa in important_features:
+                        status = "✓ OK" if fa['satisfied'] else "✗ MISSING"
+                        lines.append(f"  [{status}] {fa['feature']}")
+                        lines.append(f"       {fa['motivation']}")
+                        lines.append("")
+
+            else:
+                lines.append(f"Status: {assessment['status']}")
+                if 'error' in assessment:
+                    lines.append(f"Error: {assessment['error']}")
+
+            lines.append("")
+            lines.append("=" * 70)
+            lines.append("")
+
+        return "\n".join(lines)
 
     def calculate_score(self, assessments: dict, max_score: float) -> tuple[float, str, dict]:
         """
@@ -341,7 +494,8 @@ class Assessor:
 
         # Calcolo percentuali per categoria
         core_percentage = (core_satisfied / core_total * core_weight) if core_total > 0 else 0.0
-        important_percentage = (important_satisfied / important_total * important_weight) if important_total > 0 else 0.0
+        important_percentage = (
+                    important_satisfied / important_total * important_weight) if important_total > 0 else 0.0
 
         # Percentuale finale
         final_percentage = core_percentage + important_percentage
