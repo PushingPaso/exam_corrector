@@ -478,7 +478,7 @@ class Assessor:
             important_weight = 0.0
             scoring_system = "100% Core (no Important details)"
         elif important_total > 0:
-            # Solo important (caso raro): 100% important
+            # Solo important: 100% important
             core_weight = 0.0
             important_weight = 1.0
             scoring_system = "100% Important (no Core - unusual)"

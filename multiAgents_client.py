@@ -3,13 +3,14 @@ Multi-Agent PARALLELO con Send API (versione corretta).
 """
 
 import asyncio
-from typing import TypedDict, Annotated, List
-from langgraph.graph import StateGraph, END
-from langgraph.types import Send  # ✓ Import corretto
-from langchain_core.messages import BaseMessage, HumanMessage
 import operator
 import time
+from typing import TypedDict, Annotated
 
+from langgraph.graph import StateGraph, END
+from pydantic import BaseModel, Field
+
+from exam.llm_provider import llm_client
 from exam.mcp import ExamMCPServer
 
 
@@ -17,20 +18,20 @@ from exam.mcp import ExamMCPServer
 # STATO CONDIVISO
 # ============================================================================
 
+class ExamData(BaseModel):
+    """A movie with details."""
+    exam_id: str = Field(..., description="exam id")
+    question_ids: list[str] = Field(..., description="the ids of the questions")
+    student_emails: list[str]= Field(..., description="the list of student emails")
+
 class MultiAgentAssessmentState(TypedDict):
-    """Stato globale condiviso."""
-
-    exam_loaded: bool
-    exam_questions: list
-    exam_students: list
-    loaded_checklists: dict
-
-    student_batches: list
-    num_workers: int
-
+    """Global state"""
+    exam_id : str
+    question_ids: list[str]
+    student_emails: list[str]
+    loaded_checklists: list[str]
     assessments: Annotated[list, operator.add]
 
-    result: str
 
 
 class WorkerState(TypedDict):
@@ -44,229 +45,134 @@ class WorkerState(TypedDict):
 # SISTEMA MULTI-AGENTE CON SEND API
 # ============================================================================
 
-class TrueParallelExamAssessment:
+class ExamAssessment:
     """Sistema con workers VERAMENTE paralleli usando Send."""
 
-    def __init__(self, exam_date: str, num_workers: int = 3):
+    def __init__(self, exam_date: str):
         self.mcp_server = ExamMCPServer()
-        self.num_workers = num_workers
         self.exam_date = exam_date
         self.graph = self._build_graph()
+        self.llm,_,_ = llm_client()
+        self.tools= [self.mcp_server.load_exam_from_yaml_tool,self.mcp_server.load_checklist,self.mcp_server.assess_student_exam]
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
 
     # ------------------------------------------------------------------------
     # NODO SETUP
     # ------------------------------------------------------------------------
 
     async def setup_node(self, state: MultiAgentAssessmentState) -> dict:
-        """Carica esame e checklist."""
+        """Carica esame e checklist chiamando direttamente i tool."""
+        import json
+
         print("\n" + "=" * 70)
         print(f"[SETUP] Caricamento esame del {self.exam_date}...")
         print("=" * 70)
 
-        import json
+        # 1. PREPARE ARGUMENTS FOR EXAM TOOL
+        exam_tool_args = {
+            "questions_file": f"se-{self.exam_date}-questions.yml",
+            "responses_file": f"se-{self.exam_date}-responses.yml",
+            "grades_file": f"se-{self.exam_date}-grades.yml"
+        }
 
-        # Costruisce i nomi dei file basandosi sulla data
-        questions_file = f"se-{self.exam_date}-questions.yml"
-        responses_file = f"se-{self.exam_date}-responses.yml"
-        grades_file = f"se-{self.exam_date}-grades.yml"  # Add grades file
+        try:
+            # 2. INVOKE EXAM TOOL DIRECTLY
+            print(f"[SETUP] Loading Exam Files: {exam_tool_args}")
+            exam_json = await self.mcp_server.load_exam_from_yaml_tool.ainvoke(exam_tool_args)
+            exam_data = json.loads(exam_json)
 
-        print(f"[SETUP] File domande: {questions_file}")
-        print(f"[SETUP] File risposte: {responses_file}")
-        print(f"[SETUP] File voti: {grades_file}")
+            if "error" in exam_data:
+                print(f"[SETUP] ✗ Error loading exam: {exam_data['error']}")
+                return {"exam_loaded": False}
 
-        result = await self.mcp_server.tools["load_exam_from_yaml"](
-            questions_file,
-            responses_file,
-            grades_file
-        )
-        data = json.loads(result)
+            # 3. PREPARE ARGUMENTS FOR CHECKLIST TOOL
+            # The tool expects a dictionary with the argument name 'question_ids'
+            question_ids = exam_data["question_ids"]
+            checklist_args = {"question_ids": question_ids}
 
-        if "error" in data:
-            print(f"[SETUP] ✗ Errore: {data['error']}")
+            # 4. INVOKE CHECKLIST TOOL DIRECTLY
+            print(f"[SETUP] Loading Checklists for {len(question_ids)} questions...")
+            checklist_json = await self.mcp_server.load_checklist.ainvoke(checklist_args)
+            checklist_data = json.loads(checklist_json)
+
+            if "status" not in checklist_data or checklist_data["status"] != "batch_completed":
+                print(f"[SETUP] ⚠ Warning loading checklists: {checklist_json}")
+
+            # 5. UPDATE STATE
+            # With TypedDict, we return a dictionary with the keys we want to update
+            print(f"[SETUP] Success! Exam ID: {exam_data['exam_id']}")
+
+            return {
+                "exam_loaded": True,
+                "exam_id": exam_data["exam_id"],
+                "question_ids": exam_data["question_ids"],
+                "student_emails": exam_data["student_email"],  # Tool returns singular 'email' list
+                "loaded_checklists": checklist_data.get("details", {}).get("loaded", [])
+            }
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[SETUP] Critical Error: {e}")
             return {"exam_loaded": False}
 
-        exam_id = data["exam_id"]
-        exam_data = self.mcp_server.context.loaded_exams[exam_id]
-
-        print(f"[SETUP] Caricati {len(exam_data['students'])} studenti")
-
-        # Carica checklist in parallelo
-        checklist_tasks = [
-            self.mcp_server.tools["load_checklist"](q["id"])
-            for q in exam_data["questions"]
-        ]
-        await asyncio.gather(*checklist_tasks)
-
-        loaded_checklists = {q["id"]: True for q in exam_data["questions"]}
-
-        print(f"[SETUP] ✓ {len(loaded_checklists)} checklist caricate")
-        print("=" * 70 + "\n")
-
-        return {
-            "exam_loaded": True,
-            "exam_questions": exam_data["questions"],
-            "exam_students": exam_data["students"],
-            "loaded_checklists": loaded_checklists
-        }
-
     # ------------------------------------------------------------------------
-    # NODO DISTRIBUTOR (ritorna dict, NON Send!)
+    # NODO WORKER
     # ------------------------------------------------------------------------
-
-    async def distribute_node(self, state: MultiAgentAssessmentState) -> dict:
-        """Divide studenti in batch e aggiorna lo stato."""
-        print("\n[DISTRIBUTOR] Divisione studenti tra workers...")
-
-        students = [s["email"] for s in state["exam_students"]]
-        batch_size = len(students) // self.num_workers + 1
-
-        batches = []
-        for i in range(0, len(students), batch_size):
-            batch = students[i:i + batch_size]
-            batches.append(batch)
-
-        for i, batch in enumerate(batches):
-            print(f"[DISTRIBUTOR] Worker {i}: {len(batch)} studenti")
-
-        print(f"[DISTRIBUTOR] ✓ Creazione di {len(batches)} branch paralleli\n")
-
-        # ⚡ Ritorna SOLO un dict per aggiornare lo stato
-        return {
-            "student_batches": batches,
-            "num_workers": len(batches)
-        }
-
-    # ------------------------------------------------------------------------
-    # FUNZIONE CHE CREA I SEND (usata in conditional_edges)
-    # ------------------------------------------------------------------------
-
-    def create_worker_sends(self, state: MultiAgentAssessmentState) -> list[Send]:
-        """Crea i Send objects per i branch paralleli."""
-        sends = []
-
-        for worker_id, batch in enumerate(state["student_batches"]):
-            # Crea stato privato per ogni worker
-            worker_state = WorkerState(
-                worker_id=worker_id,
-                batch=batch,
-                assessments=[]
-            )
-
-            # Crea un Send per ogni worker
-            sends.append(Send("worker", worker_state))
-
-        print(f"[DISPATCHER] Lancio di {len(sends)} workers in parallelo!\n")
-        return sends
-
-    # ------------------------------------------------------------------------
-    # NODO WORKER (eseguito in parallelo)
-    # ------------------------------------------------------------------------
-
-    async def worker_node(self, state: WorkerState) -> dict:
-        """Worker che valuta il suo batch."""
-        worker_id = state["worker_id"] + 1
-        batch = state["batch"]
-
-        print(f"[WORKER {worker_id}] AVVIO in parallelo! ({len(batch)} studenti)")
-
+    async def worker_node(self, state: MultiAgentAssessmentState) -> dict:
+        """
+        Worker che valuta gli studenti usando direttamente il tool assess_student_exam.
+        """
         import json
-        start = time.time()
 
+        # Access state using dictionary syntax for TypedDict
+        students = state["student_emails"]
+
+        print(f"\n[WORKER] Processing {len(students)} students...")
+        start = time.time()
         results = []
 
-        for idx, student_email in enumerate(batch, 1):
-            print(f"[WORKER {worker_id}] [{idx}/{len(batch)}] {student_email[:30]}...")
+        for student_email in students:
+            print(f"[WORKER] Assessing: {student_email} ...")
 
             try:
-                result = await self.mcp_server.tools["assess_student_exam"](student_email)
-                assessment_data = json.loads(result)
+                # 1. INVOKE ASSESSMENT TOOL DIRECTLY
+                # No LLM involved here, just pure python logic execution via the tool wrapper
+                assessment_json = await self.mcp_server.assess_student_exam.ainvoke(
+                    {"student_email": student_email}
+                )
 
-                if "error" not in assessment_data:
-                    results.append({
-                        "worker_id": worker_id,
-                        "student": student_email,
-                        "score": assessment_data["calculated_score"],
-                        "max_score": assessment_data["max_score"],
-                        "percentage": assessment_data["percentage"]
-                    })
-                    print(f"[WORKER {worker_id}] Score: {assessment_data['calculated_score']:.2f}")
+                # 2. PARSE JSON
+                assessment_data = json.loads(assessment_json)
+
+                if "error" in assessment_data:
+                    print(f"[WORKER] ✗ Error for {student_email}: {assessment_data['error']}")
+                    continue
+
+                # 3. EXTRACT RELEVANT METRICS
+                # Assuming the assessment tool returns a dict with these keys
+                score = assessment_data.get("calculated_score", 0)
+                max_score = assessment_data.get("max_score", 30)
+                percentage = assessment_data.get("percentage", "0%")
+
+                results.append({
+                    "student": student_email,
+                    "score": score,
+                    "max_score": max_score,
+                    "percentage": percentage
+                })
+                print(f"[WORKER] Done. Score: {score:.2f}/{max_score}")
 
             except Exception as e:
-                print(f"[WORKER {worker_id}] ✗ Errore: {e}")
+                print(f"[WORKER] Critical Error processing {student_email}: {e}")
 
         elapsed = time.time() - start
-        print(f"[WORKER {worker_id+1}] COMPLETATO in {elapsed:.2f}s ({len(results)} valutazioni)\n")
+        print(f"[WORKER] BATCH COMPLETED in {elapsed:.2f}s\n")
 
-        # Ritorna dict che verrà aggiunto allo stato globale grazie a operator.add
+        # Return the update for the 'assessments' key in state
         return {"assessments": results}
 
-    # ------------------------------------------------------------------------
-    # NODO REPORT
-    # ------------------------------------------------------------------------
 
-    async def report_node(self, state: MultiAgentAssessmentState) -> dict:
-        """Genera report finale."""
-        print("\n" + "=" * 70)
-        print("[REPORT] Aggregazione risultati...")
-        print("=" * 70)
-
-        if not state.get("assessments"):
-            return {"result": "Nessuna valutazione completata"}
-
-        assessments = sorted(state["assessments"], key=lambda x: x["student"])
-
-        scores = [a["score"] for a in assessments]
-        avg_score = sum(scores) / len(scores)
-
-        # Statistiche per worker
-        worker_stats = {}
-        for a in assessments:
-            wid = a["worker_id"]
-            if wid not in worker_stats:
-                worker_stats[wid] = []
-            worker_stats[wid].append(a["score"])
-
-        report = f"""
-{'=' * 70}
-REPORT VALUTAZIONE MULTI-AGENTE PARALLELO (Send API)
-{'=' * 70}
-
-ESAME DEL: {self.exam_date}
-
-CONFIGURAZIONE:
-  Workers in parallelo: {state['num_workers']}
-  Studenti totali: {len(assessments)}
-
-STATISTICHE GLOBALI:
-  Punteggio medio: {avg_score:.2f}
-  Punteggio massimo: {max(scores):.2f}
-  Punteggio minimo: {min(scores):.2f}
-
-STATISTICHE PER WORKER:
-"""
-
-        for wid in sorted(worker_stats.keys()):
-            wscores = worker_stats[wid]
-            wavg = sum(wscores) / len(wscores)
-            report += f"  Worker {wid}: {len(wscores)} studenti, media {wavg:.2f}\n"
-
-        report += f"\nDETTAGLIO STUDENTI:\n"
-
-        for i, assessment in enumerate(assessments, 1):
-            email_preview = assessment["student"][:40] + "..."
-            report += f"\n{i:2d}. {email_preview}"
-            report += f"\n     Score: {assessment['score']:.2f}/{assessment['max_score']} "
-            report += f"({assessment['percentage']:.1f}%) [Worker {assessment['worker_id']}]"
-
-        report += "\n" + "=" * 70
-
-        print(report)
-
-        return {"result": report}
-
-    # ------------------------------------------------------------------------
-    # COSTRUZIONE GRAFO (LA CHIAVE È QUI!)
-    # ------------------------------------------------------------------------
 
     def _build_graph(self) -> StateGraph:
         """Costruisce grafo con Send API."""
@@ -275,24 +181,12 @@ STATISTICHE PER WORKER:
 
         # Aggiungi nodi
         workflow.add_node("setup", self.setup_node)
-        workflow.add_node("distribute", self.distribute_node)
-        workflow.add_node("worker", self.worker_node)  # Verrà chiamato N volte in parallelo
-        workflow.add_node("report", self.report_node)
+        workflow.add_node("assess", self.worker_node)
 
         # Flusso
         workflow.set_entry_point("setup")
-        workflow.add_edge("setup", "distribute")
-
-        # ⚡ QUESTO È IL TRUCCO: add_conditional_edges con funzione che ritorna Send[]
-        workflow.add_conditional_edges(
-            "distribute",
-            self.create_worker_sends,  # Funzione che ritorna lista di Send
-            # Non serve path_map perché i Send specificano già il nodo target
-        )
-
-        # Dopo che tutti i worker finiscono, vai al report
-        workflow.add_edge("worker", "report")
-        workflow.add_edge("report", END)
+        workflow.add_edge("setup", "assess")
+        workflow.add_edge("assess", END)
 
         return workflow.compile()
 
@@ -306,18 +200,14 @@ STATISTICHE PER WORKER:
         print("\n" + "=" * 70)
         print("MULTI-AGENT PARALLEL ASSESSMENT (Send API)")
         print(f"Esame del: {self.exam_date}")
-        print(f"Workers: {self.num_workers}")
         print("=" * 70)
 
         initial_state = MultiAgentAssessmentState(
-            exam_loaded=False,
-            exam_questions=[],
-            exam_students=[],
-            loaded_checklists={},
-            student_batches=[],
-            num_workers=self.num_workers,
-            assessments=[],
-            result=""
+            exam_id= "",
+            question_ids = [],
+            student_emails = [],
+            loaded_checklists = [],
+            assessments = []
         )
 
         start = time.time()
@@ -343,7 +233,7 @@ async def main():
         print("\nGROQ_API_KEY not set!")
         return
 
-    print("\n True Parallel Multi-Agent Assessment (Send API)")
+    print("\n Multi-Agent Exam Assessment")
     print("=" * 70)
 
     # Chiedi la data dell'esame
@@ -354,9 +244,8 @@ async def main():
         exam_date = "2025-06-05"  # Default
         print(f"Usando data di default: {exam_date}")
 
-    num_workers = int(input("Numero di workers (default 3): ") or "3")
 
-    system = TrueParallelExamAssessment(exam_date=exam_date, num_workers=num_workers)
+    system = ExamAssessment(exam_date=exam_date)
     await system.run()
 
 
