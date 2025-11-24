@@ -4,8 +4,8 @@ numpy
 mcp>=1.0.0
 
 # Core dependencies
-langchain>=0.1.0
-langchain-core>=0.1.0
+langchain
+langchain-core
 langchain-openai>=0.0.5
 langchain-community>=0.0.20
 langchain_groq
@@ -13,7 +13,6 @@ langchain_groq
 sentence-transformers>=2.2.0
 transformers>=4.30.0
 torch>=2.0.0
-mlflow>=3.3
 
 # Vector store
 sqlitedict>=2.1.0

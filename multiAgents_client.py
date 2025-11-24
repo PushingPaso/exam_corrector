@@ -1,11 +1,18 @@
 """
-Multi-Agent PARALLELO con Send API (versione corretta).
+Multi-Agent PARALLELO con Send API e Integrazione MLflow.
 """
 
 import asyncio
 import operator
 import time
+import json
+import statistics  # Aggiunto per calcoli statistici
 from typing import TypedDict, Annotated
+
+# --- MLFLOW IMPORTS ---
+import mlflow
+import mlflow.langchain
+# ----------------------
 
 from langgraph.graph import StateGraph, END
 from pydantic import BaseModel, Field
@@ -15,7 +22,7 @@ from exam.mcp import ExamMCPServer
 
 
 # ============================================================================
-# STATO CONDIVISO
+# STATO CONDIVISO (Invariato)
 # ============================================================================
 
 class ExamData(BaseModel):
@@ -32,18 +39,12 @@ class MultiAgentAssessmentState(TypedDict):
     loaded_checklists: list[str]
     assessments: Annotated[list, operator.add]
 
-
-
 class WorkerState(TypedDict):
     """Stato privato di ogni worker."""
     worker_id: int
     batch: list
     assessments: list
 
-
-# ============================================================================
-# SISTEMA MULTI-AGENTE CON SEND API
-# ============================================================================
 
 class ExamAssessment:
     """Sistema con workers VERAMENTE paralleli usando Send."""
@@ -52,7 +53,7 @@ class ExamAssessment:
         self.mcp_server = ExamMCPServer()
         self.exam_date = exam_date
         self.graph = self._build_graph()
-        self.llm,_,_ = llm_client()
+        self.llm, self.model_name, _ = llm_client() # Recupero anche il nome modello
         self.tools= [self.mcp_server.load_exam_from_yaml_tool,self.mcp_server.load_checklist,self.mcp_server.assess_student_exam]
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
@@ -62,13 +63,10 @@ class ExamAssessment:
 
     async def setup_node(self, state: MultiAgentAssessmentState) -> dict:
         """Carica esame e checklist chiamando direttamente i tool."""
-        import json
-
         print("\n" + "=" * 70)
         print(f"[SETUP] Caricamento esame del {self.exam_date}...")
         print("=" * 70)
 
-        # 1. PREPARE ARGUMENTS FOR EXAM TOOL
         exam_tool_args = {
             "questions_file": f"se-{self.exam_date}-questions.yml",
             "responses_file": f"se-{self.exam_date}-responses.yml",
@@ -76,7 +74,6 @@ class ExamAssessment:
         }
 
         try:
-            # 2. INVOKE EXAM TOOL DIRECTLY
             print(f"[SETUP] Loading Exam Files: {exam_tool_args}")
             exam_json = await self.mcp_server.load_exam_from_yaml_tool.ainvoke(exam_tool_args)
             exam_data = json.loads(exam_json)
@@ -85,28 +82,20 @@ class ExamAssessment:
                 print(f"[SETUP] ✗ Error loading exam: {exam_data['error']}")
                 return {"exam_loaded": False}
 
-            # 3. PREPARE ARGUMENTS FOR CHECKLIST TOOL
-            # The tool expects a dictionary with the argument name 'question_ids'
             question_ids = exam_data["question_ids"]
             checklist_args = {"question_ids": question_ids}
 
-            # 4. INVOKE CHECKLIST TOOL DIRECTLY
             print(f"[SETUP] Loading Checklists for {len(question_ids)} questions...")
             checklist_json = await self.mcp_server.load_checklist.ainvoke(checklist_args)
             checklist_data = json.loads(checklist_json)
 
-            if "status" not in checklist_data or checklist_data["status"] != "batch_completed":
-                print(f"[SETUP] ⚠ Warning loading checklists: {checklist_json}")
-
-            # 5. UPDATE STATE
-            # With TypedDict, we return a dictionary with the keys we want to update
             print(f"[SETUP] Success! Exam ID: {exam_data['exam_id']}")
 
             return {
                 "exam_loaded": True,
                 "exam_id": exam_data["exam_id"],
                 "question_ids": exam_data["question_ids"],
-                "student_emails": exam_data["student_email"],  # Tool returns singular 'email' list
+                "student_emails": exam_data["student_email"],
                 "loaded_checklists": checklist_data.get("details", {}).get("loaded", [])
             }
 
@@ -123,37 +112,26 @@ class ExamAssessment:
         """
         Worker che valuta gli studenti usando direttamente il tool assess_student_exam.
         """
-        import json
-
-        # Access state using dictionary syntax for TypedDict
         students = state["student_emails"]
-
         print(f"\n[WORKER] Processing {len(students)} students...")
         start = time.time()
         results = []
 
         for student_email in students:
             print(f"[WORKER] Assessing: {student_email} ...")
-
             try:
-                # 1. INVOKE ASSESSMENT TOOL DIRECTLY
-                # No LLM involved here, just pure python logic execution via the tool wrapper
                 assessment_json = await self.mcp_server.assess_student_exam.ainvoke(
                     {"student_email": student_email}
                 )
-
-                # 2. PARSE JSON
                 assessment_data = json.loads(assessment_json)
 
                 if "error" in assessment_data:
                     print(f"[WORKER] ✗ Error for {student_email}: {assessment_data['error']}")
                     continue
 
-                # 3. EXTRACT RELEVANT METRICS
-                # Assuming the assessment tool returns a dict with these keys
                 score = assessment_data.get("calculated_score", 0)
                 max_score = assessment_data.get("max_score", 30)
-                percentage = assessment_data.get("percentage", "0%")
+                percentage = assessment_data.get("percentage", 0) # Assicurati sia float/int
 
                 results.append({
                     "student": student_email,
@@ -168,40 +146,19 @@ class ExamAssessment:
 
         elapsed = time.time() - start
         print(f"[WORKER] BATCH COMPLETED in {elapsed:.2f}s\n")
-
-        # Return the update for the 'assessments' key in state
         return {"assessments": results}
 
-
-
     def _build_graph(self) -> StateGraph:
-        """Costruisce grafo con Send API."""
-
         workflow = StateGraph(MultiAgentAssessmentState)
-
-        # Aggiungi nodi
         workflow.add_node("setup", self.setup_node)
         workflow.add_node("assess", self.worker_node)
-
-        # Flusso
         workflow.set_entry_point("setup")
         workflow.add_edge("setup", "assess")
         workflow.add_edge("assess", END)
-
         return workflow.compile()
 
-    # ------------------------------------------------------------------------
-    # ESECUZIONE
-    # ------------------------------------------------------------------------
-
     async def run(self):
-        """Esegue la valutazione parallela."""
-
-        print("\n" + "=" * 70)
-        print("MULTI-AGENT PARALLEL ASSESSMENT (Send API)")
-        print(f"Esame del: {self.exam_date}")
-        print("=" * 70)
-
+        # Questo metodo ora è chiamato dentro il contesto MLflow nel main
         initial_state = MultiAgentAssessmentState(
             exam_id= "",
             question_ids = [],
@@ -209,45 +166,88 @@ class ExamAssessment:
             loaded_checklists = [],
             assessments = []
         )
-
-        start = time.time()
-        final_state = await self.graph.ainvoke(initial_state)
-        elapsed = time.time() - start
-
-        print(f"\n{'=' * 70}")
-        print(f"⚡ COMPLETATO IN {elapsed:.2f} SECONDI ⚡")
-        print(f"{'=' * 70}\n")
-
-        return final_state
+        return await self.graph.ainvoke(initial_state)
 
 
 # ============================================================================
-# DEMO
+# DEMO CON MLFLOW
 # ============================================================================
 
 async def main():
-    """Entry point."""
-
     import os
     if not os.environ.get("GROQ_API_KEY"):
         print("\nGROQ_API_KEY not set!")
         return
 
-    print("\n Multi-Agent Exam Assessment")
+    print("\n Multi-Agent Exam Assessment with MLflow")
     print("=" * 70)
 
-    # Chiedi la data dell'esame
     exam_date = input("\nData dell'esame (formato YYYY-MM-DD, es. 2025-06-05): ").strip()
-
-    # Validazione base del formato
     if not exam_date:
-        exam_date = "2025-06-05"  # Default
-        print(f"Usando data di default: {exam_date}")
+        exam_date = "2025-06-05"
 
-
+    # Inizializza il sistema
     system = ExamAssessment(exam_date=exam_date)
-    await system.run()
 
+    # 1. SETUP MLFLOW
+    # Imposta un esperimento per raggruppare le run
+    mlflow.set_experiment("Exam_Corrector_Agents")
+    mlflow.set_tracking_uri("http://localhost:5000")
+    # Abilita l'autologging per LangChain (cattura prompt, chain, tool calls)
+    mlflow.langchain.autolog()
+
+    print("\n[MLFLOW] Avvio tracciamento run...")
+
+    # 2. AVVIO RUN MLFLOW
+    with mlflow.start_run(run_name=f"Assessment-{exam_date}") as run:
+
+        # Log parametri iniziali
+        mlflow.log_param("exam_date", exam_date)
+        mlflow.log_param("model_name", system.model_name)
+        mlflow.log_param("agent_type", "LangGraph-Parallel-Simulation")
+
+        start_time = time.time()
+
+        # --- ESECUZIONE AGENTE ---
+        final_state = await system.run()
+        # -------------------------
+
+        total_duration = time.time() - start_time
+
+        # 3. CALCOLO E LOG METRICHE
+        assessments = final_state.get("assessments", [])
+        num_students = len(assessments)
+
+        if num_students > 0:
+            scores = [a['score'] for a in assessments]
+            percentages = [float(a['percentage']) for a in assessments]
+
+            avg_score = statistics.mean(scores)
+            avg_percentage = statistics.mean(percentages)
+
+            # Log metriche aggregate
+            mlflow.log_metric("total_duration_seconds", total_duration)
+            mlflow.log_metric("students_processed", num_students)
+            mlflow.log_metric("average_score", avg_score)
+            mlflow.log_metric("average_percentage", avg_percentage)
+            mlflow.log_metric("min_score", min(scores))
+            mlflow.log_metric("max_score", max(scores))
+
+            # 4. SALVATAGGIO ARTIFATTI (Risultati completi)
+            # Salviamo il JSON finale come artefatto consultabile nella UI
+            results_file = "final_assessment_results.json"
+            with open(results_file, "w", encoding="utf-8") as f:
+                json.dump(final_state, f, indent=2, ensure_ascii=False)
+
+            mlflow.log_artifact(results_file)
+            print(f"[MLFLOW] Artifact {results_file} saved.")
+
+        else:
+            print("[MLFLOW] Nessuno studente valutato, nessuna metrica salvata.")
+            mlflow.log_metric("students_processed", 0)
+
+        print(f"\n[MLFLOW] Run completata. ID: {run.info.run_id}")
+        print(f"Per visualizzare i risultati esegui nel terminale: mlflow ui")
 
 if __name__ == "__main__":
     asyncio.run(main())
