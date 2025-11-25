@@ -4,7 +4,7 @@ from langchain_groq import ChatGroq
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain_core.rate_limiters import InMemoryRateLimiter
-
+from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
@@ -47,7 +47,7 @@ def llm_client(model_name: str = None, model_provider: str = "groq", structured_
     if model_name and model_name in model_configs:
         model_name = model_configs[model_name]
     elif not model_name:
-        model_name = "llama-3.3-70b-versatile"  # Default
+        model_name = "gpt-5-nano"  # Default
 
     # For compatibility
     if not model_provider:
@@ -62,9 +62,8 @@ def llm_client(model_name: str = None, model_provider: str = "groq", structured_
     # )
 
     # Create ChatGroq instance
-    model = init_chat_model(
-        model_name,
-        model_provider = model_provider,
+    model = ChatOpenAI(
+        model ="gpt-4o",
         temperature=0.1,
         #rate_limiter = rate_limiter
     )
