@@ -6,7 +6,7 @@ mcp>=1.0.0
 # Core dependencies
 langchain
 langchain-core
-langchain-openai>=0.0.5
+langchain-openai
 langchain-community>=0.0.20
 langchain_groq
 # HuggingFace for embeddings

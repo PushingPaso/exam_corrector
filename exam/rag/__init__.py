@@ -1,5 +1,6 @@
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import SQLiteVec
+from exam.llm_provider import ensure_openai_api_key
 from exam import DIR_ROOT
 from pydantic import BaseModel
 import re
@@ -57,118 +58,27 @@ def all_slides(files = None):
             )
 
 
-def huggingface_embeddings(model=None):
-    """
-    Creates HuggingFace embeddings model.
-
-    Args:
-        model: Model identifier or size hint
-               Recommended: 'bge-large' for best accuracy
-               Default: bge-base (balance accuracy/speed)
-
-    Returns:
-        HuggingFaceEmbeddings instance
-    """
-    if not model:
-        model = "bge-large"  # Default più potente del vecchio
-
-    model = model.lower()
-
-    # STATO DELL'ARTE 2024-2025
-    if model == "bge-large" or model == "best":
-        # Massima accuratezza (MTEB: 64.2)
-        model_name = "BAAI/bge-large-en-v1.5"
-        model_kwargs = {
-            'device': 'cpu',  # o 'cuda' se GPU disponibile
-        }
-        encode_kwargs = {
-            'normalize_embeddings': True,
-            'batch_size': 32,  # Ottimizzato per large model
-        }
-
-    elif model == "bge-base" or model == "recommended":
-        # Ottimo compromesso accuratezza/velocità (MTEB: 63.5)
-        model_name = "BAAI/bge-base-en-v1.5"
-        model_kwargs = {'device': 'cpu'}
-        encode_kwargs = {
-            'normalize_embeddings': True,
-            'batch_size': 64,
-        }
-
-    elif model == "bge-small" or model == "fast":
-        # Veloce ma comunque superiore a MiniLM (MTEB: 62.1)
-        model_name = "BAAI/bge-small-en-v1.5"
-        model_kwargs = {'device': 'cpu'}
-        encode_kwargs = {
-            'normalize_embeddings': True,
-            'batch_size': 128,
-        }
-
-    # ALTERNATIVE (per confronto nella tesi)
-    elif model == "nomic":
-        # Open source + ottimo per long context
-        model_name = "nomic-ai/nomic-embed-text-v1"
-        model_kwargs = {'device': 'cpu', 'trust_remote_code': True}
-        encode_kwargs = {'normalize_embeddings': True}
-
-    elif model == "gte-large":
-        # Alibaba, molto buono per retrieval
-        model_name = "thenlper/gte-large"
-        model_kwargs = {'device': 'cpu'}
-        encode_kwargs = {'normalize_embeddings': True}
-
-    # LEGACY (per baseline comparison)
-    elif model == "legacy-small" or "mini" in model:
-        # Il tuo attuale default (BASELINE)
-        model_name = "sentence-transformers/all-MiniLM-L6-v2"
-        model_kwargs = {'device': 'cpu'}
-        encode_kwargs = {'normalize_embeddings': True}
-
-    elif model == "legacy-large" or "mpnet" in model:
-        # Il tuo attuale "large" (BASELINE)
-        model_name = "sentence-transformers/all-mpnet-base-v2"
-        model_kwargs = {'device': 'cpu'}
-        encode_kwargs = {'normalize_embeddings': True}
-
-    elif model.startswith("BAAI/") or model.startswith("sentence-transformers/") or "/" in model:
-        # Direct model name provided
-        model_name = model
-        model_kwargs = {'device': 'cpu'}
-        encode_kwargs = {'normalize_embeddings': True}
-
+def openai_embeddings(model):
+    ensure_openai_api_key()
+    model = model.lower() if model else "small"
+    # https://platform.openai.com/docs/models/
+    if "small" in model:
+        model = "text-embedding-3-small"
+    elif "large" in model:
+        model = "text-embedding-3-large"
+    elif "old" in model or "ada" in model:
+        model = "text-embedding-ada-002"
     else:
-        raise ValueError(
-            f"Unknown model hint: {model}. "
-            "Use 'bge-large', 'bge-base', 'bge-small', 'nomic', 'gte-large', "
-            "'legacy-small', 'legacy-large', or a full HuggingFace model name."
-        )
-
-    print(f"# Loading embeddings model: {model_name}")
-
-    return HuggingFaceEmbeddings(
-        model_name=model_name,
-        model_kwargs=model_kwargs,
-        encode_kwargs=encode_kwargs
-    )
+        raise ValueError(f"Unknown OpenAI model: {model}. "
+                         "Please use 'small', 'large', or 'old'/'ada' variants.")
+    return OpenAIEmbeddings(model=model)
 
 
 def sqlite_vector_store(
-        db_file: str = str(FILE_DB), 
-        model: str = None, 
+        db_file: str = str(FILE_DB),
+        model: str = None,
         table_name: str = "se_slides"):
-    """
-    Creates or loads a SQLite vector store with HuggingFace embeddings.
-    
-    Args:
-        db_file: Path to SQLite database file
-        model: Embedding model hint or name
-        table_name: Name of the table in the database
-    
-    Returns:
-        SQLiteVec instance
-    """
-    embeddings = huggingface_embeddings(model)
-    
+    embeddings = openai_embeddings(model)
     return SQLiteVec(
         db_file=db_file,
         embedding=embeddings,

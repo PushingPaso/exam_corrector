@@ -4,47 +4,20 @@ Replica la logica di multiAgents_client utilizzando LangChain AgentExecutor stan
 """
 
 import asyncio
-from langchain_core.callbacks import StdOutCallbackHandler, BaseCallbackHandler # <--- Import BaseCallbackHandler
+
+from langchain_community.callbacks import get_openai_callback
+from langchain_core.callbacks import StdOutCallbackHandler, BaseCallbackHandler
 from langchain.agents import create_agent
 from langchain.tools import tool
 
 from exam.llm_provider import llm_client
 from exam.mcp import ExamMCPServer
 
-# --- 1. DEFINISCI IL TRACKER ---
-class TokenUsageTracker(BaseCallbackHandler):
-    """Callback per tracciare i token usati durante l'esecuzione."""
-    def __init__(self):
-        self.total_tokens = 0
-        self.prompt_tokens = 0
-        self.completion_tokens = 0
-
-    def on_llm_end(self, response, **kwargs):
-        # Tenta di estrarre i token usage dalla risposta standard di LangChain
-        try:
-            # Standard per molti provider (OpenAI, Groq via ChatGroq)
-            if response.llm_output and "token_usage" in response.llm_output:
-                usage = response.llm_output["token_usage"]
-                p_tokens = usage.get("prompt_tokens", 0)
-                c_tokens = usage.get("completion_tokens", 0)
-                t_tokens = usage.get("total_tokens", 0)
-
-                self.prompt_tokens += p_tokens
-                self.completion_tokens += c_tokens
-                self.total_tokens += t_tokens
-
-                print(f"   [💰 COST] Call Tokens: {t_tokens} (Prompt: {p_tokens}, Compl: {c_tokens})")
-        except Exception:
-            pass
-
 async def main():
-    # Handler per stampare i log a video
-    console_handler = StdOutCallbackHandler()
-    # 2. ISTANZIA IL TRACKER
-    token_tracker = TokenUsageTracker()
 
-    # Lista dei callback da passare agli agenti
-    my_callbacks = [console_handler, token_tracker]
+    console_handler = StdOutCallbackHandler()
+
+    my_callbacks = [console_handler]
 
     print("\n Multi-Agent Exam Assessor")
     print("=" * 70)
@@ -64,7 +37,6 @@ async def main():
         "Be brief and concise."
     )
 
-    # Nota: Prompt aggiornato per usare il tool list_students
     assess_prompt = (
         "You are an assessment agent. The data is already loaded into the shared context (ExamMCPServer). "
         "1. FIRST, call the 'list_loaded_students_tool' tool to get the list of student emails. "
@@ -73,8 +45,6 @@ async def main():
 
     print(f"\n[CLIENT] Starting assessment for exam date {exam_date}...\n")
 
-    # --- CREAZIONE AGENTI ---
-    # Passiamo i tool corretti (quelli rinominati nel file mcp/__init__.py)
     uploaderAgent = create_agent(
         llm,
         tools=[mcp.load_exam_from_yaml_tool, mcp.load_checklist],
@@ -87,7 +57,6 @@ async def main():
         system_prompt=assess_prompt
     )
 
-    # --- TOOL DEL SUPERVISORE ---
     @tool(
         "uploaderAgent",
         description="MANDATORY FIRST STEP. Call this agent to load exam data. Input: string description."
@@ -126,15 +95,17 @@ async def main():
     )
 
     print("\n--- [System] Starting Supervisor Process ---\n")
-    await supervisor.ainvoke(
-        {"messages": [{"role": "user", "content": supervisor_query}]},
-        config={"callbacks": my_callbacks}
-    )
 
-    print("\n" + "="*30)
-    print(f"Total Tokens: {token_tracker.total_tokens}")
-    print(f" - Prompt:    {token_tracker.prompt_tokens}")
-    print(f" - Completion:{token_tracker.completion_tokens}")
+    with get_openai_callback() as cb:
+        await supervisor.ainvoke(
+            {"messages": [{"role": "user", "content": supervisor_query}]},
+            config={"callbacks": my_callbacks}
+        )
+        print(f"Total Tokens: {cb.total_tokens}")
+        print(f"Prompt Tokens: {cb.prompt_tokens}")
+        print(f"Completion Tokens: {cb.completion_tokens}")
+        print(f"Total Cost (USD): ${cb.total_cost:.4f}")
+
 
 if __name__ == '__main__':
     asyncio.run(main())

@@ -12,18 +12,14 @@ IMPORTANT EVALUATION GUIDELINES:
 
 For CORE elements:
 - Mark as satisfied if the student demonstrates understanding of the fundamental concept
-- Accept partial explanations if they capture the essence of the concept
 - Accept equivalent formulations or paraphrasing
 - DO NOT require perfect wording or complete coverage of all details
 - Focus on: does the student understand the main idea?
 
 For IMPORTANT DETAILS:
-- Mark as SATISFIED if the detail is mentioned or implied, even briefly
-- Accept related concepts that show understanding
+- Mark as SATISFIED if the detail concept is mentioned
 - DO NOT penalize for missing technical terminology if the concept is clear
 
-
-GENERAL PRINCIPLE: If in doubt, favor the student. Mark as satisfied unless clearly missing.
 
 Your motivation should be:
 - Concise and constructive
