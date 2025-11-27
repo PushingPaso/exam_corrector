@@ -1,26 +1,25 @@
-"""
-Client Agente Singolo con integrazione MLflow.
-Replica la logica di multiAgents_client utilizzando LangChain AgentExecutor standard.
-"""
-
 import asyncio
-
+import time
+import mlflow
+import mlflow.langchain
 from langchain_community.callbacks import get_openai_callback
-from langchain_core.callbacks import StdOutCallbackHandler, BaseCallbackHandler
+from langchain_core.callbacks import StdOutCallbackHandler
 from langchain.agents import create_agent
 from langchain.tools import tool
-
 from exam.llm_provider import llm_client
 from exam.mcp import ExamMCPServer
 
+
 async def main():
-
     console_handler = StdOutCallbackHandler()
-
     my_callbacks = [console_handler]
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("LangChain_Exam_Assessment")
+    mlflow.langchain.autolog()
 
-    print("\n Multi-Agent Exam Assessor")
+    print("\nMulti-Agent Exam Assessor")
     print("=" * 70)
+
     exam_date = input("\nExam date (format YYYY-MM-DD, e.g., 2025-06-05): ").strip()
     if not exam_date:
         exam_date = "2025-06-05"
@@ -53,7 +52,7 @@ async def main():
 
     assessorAgent = create_agent(
         llm,
-        tools=[mcp.assess_students_batch, mcp.list_students], # Assicurati che in mcp/__init__.py siano staticmethod e decorati corretti
+        tools=[mcp.assess_students_batch, mcp.list_students],
         system_prompt=assess_prompt
     )
 
@@ -63,7 +62,6 @@ async def main():
     )
     async def call_uploaderAgent(upload_query: str):
         print(f"\n--- [Supervisor] Call to Uploader Agent ---\n")
-        # 3. PASSA I CALLBACK NELLA CONFIG
         result = await uploaderAgent.ainvoke(
             {"messages": [{"role": "user", "content": upload_query}]},
             config={"callbacks": my_callbacks}
@@ -76,7 +74,6 @@ async def main():
     )
     async def call_assessorAgent(query: str):
         print(f"\n--- [Supervisor] Call to Assessor Agent ---\n")
-        # 3. PASSA I CALLBACK NELLA CONFIG
         result = await assessorAgent.ainvoke(
             {"messages": [{"role": "user", "content": query}]},
             config={"callbacks": my_callbacks}
@@ -96,15 +93,33 @@ async def main():
 
     print("\n--- [System] Starting Supervisor Process ---\n")
 
-    with get_openai_callback() as cb:
-        await supervisor.ainvoke(
-            {"messages": [{"role": "user", "content": supervisor_query}]},
-            config={"callbacks": my_callbacks}
-        )
-        print(f"Total Tokens: {cb.total_tokens}")
-        print(f"Prompt Tokens: {cb.prompt_tokens}")
-        print(f"Completion Tokens: {cb.completion_tokens}")
-        print(f"Total Cost (USD): ${cb.total_cost:.4f}")
+    with mlflow.start_run() as run:
+        mlflow.log_param("exam_date", exam_date)
+        mlflow.log_param("model_name", model_name)
+        mlflow.log_param("framework", "LangChain")
+
+        start_time = time.time()
+
+        with get_openai_callback() as cb:
+            await supervisor.ainvoke(
+                {"messages": [{"role": "user", "content": supervisor_query}]},
+                config={"callbacks": my_callbacks}
+            )
+
+            end_time = time.time()
+            duration = end_time - start_time
+
+            print(f"Total Tokens: {cb.total_tokens}")
+            print(f"Prompt Tokens: {cb.prompt_tokens}")
+            print(f"Completion Tokens: {cb.completion_tokens}")
+            print(f"Total Cost (USD): ${cb.total_cost:.4f}")
+            print(f"Duration (seconds): {duration:.2f}")
+
+            mlflow.log_metric("total_tokens", cb.total_tokens)
+            mlflow.log_metric("prompt_tokens", cb.prompt_tokens)
+            mlflow.log_metric("completion_tokens", cb.completion_tokens)
+            mlflow.log_metric("total_cost_usd", cb.total_cost)
+            mlflow.log_metric("duration_seconds", duration)
 
 
 if __name__ == '__main__':
