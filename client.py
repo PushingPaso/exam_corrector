@@ -8,6 +8,7 @@ from langchain.agents import create_agent
 from langchain.tools import tool
 from exam.llm_provider import llm_client
 from exam.mcp import ExamMCPServer
+from exam.mlflow import calculate_overhead
 
 
 async def main():
@@ -114,13 +115,13 @@ async def main():
             print(f"Completion Tokens: {cb.completion_tokens}")
             print(f"Total Cost (USD): ${cb.total_cost:.4f}")
             print(f"Duration (seconds): {duration:.2f}")
+            calculate_overhead(run,duration)
 
             mlflow.log_metric("total_tokens", cb.total_tokens)
             mlflow.log_metric("prompt_tokens", cb.prompt_tokens)
             mlflow.log_metric("completion_tokens", cb.completion_tokens)
             mlflow.log_metric("total_cost_usd", cb.total_cost)
             mlflow.log_metric("duration_seconds", duration)
-
 
 if __name__ == '__main__':
     asyncio.run(main())

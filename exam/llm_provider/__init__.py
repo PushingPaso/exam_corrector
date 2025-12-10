@@ -54,7 +54,8 @@ def llm_client(model_name: str = None, model_provider: str = "groq", structured_
     if model_name and model_name in model_configs:
         model_name = model_configs[model_name]
     elif not model_name:
-        model_name = "gpt-4o"  # Default
+        #model_name = "gpt-4o"
+        model_name ="gpt-4.1-mini"
 
     # For compatibility
     if not model_provider:
