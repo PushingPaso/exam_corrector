@@ -1,0 +1,190 @@
+STUDENT ASSESSMENT SUMMARY
+======================================================================
+
+Student: f05177a871d2cba4d711324c60e1c50cd197577f882800af01d66dd48502a9b9c971369b9e18dd32bbcc2b8431e9658af2e9ad1edfdb2c51bd7e15008ec9a29a
+Calculated Score: 15.15/27.0
+Calculated Percentage: 56.1%
+Original Moodle Grade: 10.50/27.00
+Scoring System: 70% Core + 30% Important_Details
+
+======================================================================
+
+Question 1: Definition-33
+----------------------------------------------------------------------
+Calculated Score: 2.10/3.0
+Original Grade: 1.00/3.0
+Difference: +1.10
+Breakdown: Core: 2/2 (100% → 70%) + Important: 0/2 (0% → 0%) = 70% of 3.0 = 2.1 [70% Core + 30% Important]
+
+CORE Elements:
+  [✓ OK] Compiled languages are translated into machine code by a compiler before execution, resulting in an executable file specific to the target platform.
+       You correctly explain that compilation involves translating the program into an executable via a compiler before execution, which shows you understand the core concept of compiled languages being transformed into machine code specific to the platform. This demonstrates a good grasp of the fundamental idea.
+
+  [✓ OK] Interpreted languages are executed directly by an interpreter, which translates the code on-the-fly during execution.
+       You correctly explain that interpreted languages are executed by an interpreter that reads and runs the program, which shows you understand the core concept of interpretation being done on-the-fly during execution. Well done capturing this fundamental idea.
+
+Important Details:
+  [✗ MISSING] Compiled languages often have faster execution times since the code is optimized for the target CPU, but errors are detected before execution.
+       You explained the basic difference between compiled and interpreted languages and gave examples, which is good. However, you did not mention that compiled languages often have faster execution times due to code optimization for the target CPU, nor that errors are detected before execution. Including these points would show a deeper understanding of the implications of compilation versus interpretation.
+
+  [✗ MISSING] Interpreted languages allow for a faster write-test-debug cycle, but errors are typically found during execution.
+       You explained the basic difference between compiled and interpreted languages and gave examples, which is good. However, you did not mention the important detail that interpreted languages allow for a faster write-test-debug cycle and that errors are typically found during execution. Including this would show a deeper understanding of the practical implications of interpretation.
+
+
+======================================================================
+
+Question 2: Modelling-2
+----------------------------------------------------------------------
+Calculated Score: 2.55/3.0
+Original Grade: 1.00/3.0
+Difference: +1.55
+Breakdown: Core: 2/2 (100% → 70%) + Important: 1/2 (50% → 15%) = 85% of 3.0 = 2.55 [70% Core + 30% Important]
+
+CORE Elements:
+  [✓ OK] Software can be modelled using the Unified Modelling Language (UML), which provides a standardized way to visualize the design of a software system.
+       You correctly mention that software systems are commonly modelled using the Unified Modelling Language (UML), which shows your understanding of the standardized way to visualize software design. This captures the core idea well.
+
+  [✓ OK] Software modelling involves creating abstract representations of the software system, including classes, functions, relationships, behaviors, and interactions.
+       You correctly highlight that software modelling involves representing the world in a formal way and that source code itself is a model, which shows your understanding of creating abstract representations of software systems. Mentioning UML as a common modelling tool also supports this. Well done capturing the core idea of software modelling.
+
+Important Details:
+  [✓ OK] Models help in understanding, explaining, and predicting the behavior of software systems by providing a simplified representation of complex systems.
+       You correctly highlight that software modelling involves representing the world in a formal way and that source code acts as a model. This shows your understanding that models provide a simplified representation to help explain software systems, aligning well with the important detail.
+
+  [✗ MISSING] Software models facilitate communication and collaboration among team members, allowing for early design decisions and documentation.
+       You mention UML and that software models represent the world formally, which is good. However, you do not explain how software models facilitate communication and collaboration among team members or how they support early design decisions and documentation. Including these aspects would strengthen your answer.
+
+
+======================================================================
+
+Question 3: DistributedSystems-30
+----------------------------------------------------------------------
+Calculated Score: 0.00/3.0
+Original Grade: 1.00/3.0
+Difference: -1.00
+Breakdown: Core: 0/1 (0% → 0%) + Important: 0/2 (0% → 0%) = 0% of 3.0 = 0.0 [70% Core + 30% Important]
+
+CORE Elements:
+  [✗ MISSING] A broker can exploit a queue by acting as an intermediary that receives messages from producers and stores them in a FIFO (First In, First Out) manner until they can be consumed by the appropriate consumers. This ensures that messages are not lost even if consumers are temporarily unavailable.
+       You correctly mention that a queue stores messages in a FIFO manner, which is a good start. However, you did not explain how a broker exploits the queue by acting as an intermediary between producers and consumers, ensuring message delivery even when consumers are unavailable. Including this role of the broker is essential to fully address the question.
+
+Important Details:
+  [✗ MISSING] The broker can manage message delivery by ensuring that messages are forwarded to consumers based on their declared interests, thus optimizing communication efficiency.
+       You correctly identified that a queue stores messages in FIFO order, which shows understanding of the basic concept. However, you did not explain how the broker exploits the queue to manage message delivery based on consumers' interests, which is key to optimizing communication efficiency in distributed systems.
+
+  [✗ MISSING] By using a queue, the broker can decouple producers and consumers, allowing them to operate independently and asynchronously, which enhances system scalability and fault tolerance.
+       You correctly identified that a queue stores messages in FIFO order, which is a good start. However, your answer does not explain how a broker exploits a queue to decouple producers and consumers, enabling independent and asynchronous operation that improves scalability and fault tolerance. Including this concept would demonstrate a deeper understanding of the broker's role in distributed systems.
+
+
+======================================================================
+
+Question 4: GHA-1
+----------------------------------------------------------------------
+Calculated Score: 2.10/3.0
+Original Grade: 0.50/3.0
+Difference: +1.60
+Breakdown: Core: 1/1 (100% → 70%) + Important: 0/2 (0% → 0%) = 70% of 3.0 = 2.1 [70% Core + 30% Important]
+
+CORE Elements:
+  [✓ OK] GitHub Actions is a CI/CD platform that allows developers to automate their software development workflows directly from their GitHub repositories.
+       You correctly identified that GitHub Actions is a feature that enables automation of tasks within software development workflows, which shows you understand its role as a CI/CD platform integrated with GitHub repositories. Well done capturing the core concept.
+
+Important Details:
+  [✗ MISSING] Workflows in GitHub Actions are defined using YAML files located in the `.github/workflows/` directory of the repository.
+       You correctly identified that GitHub Actions automates tasks within the software development workflow, which shows understanding of the main concept. However, you did not mention that workflows are defined using YAML files located in the `.github/workflows/` directory of the repository, which is an important detail to demonstrate deeper knowledge of how GitHub Actions operates.
+
+  [✗ MISSING] Each workflow consists of jobs, which are executed in parallel unless dependencies are specified, and each job runs in a fresh virtual machine.
+       You correctly identified that GitHub Actions automates tasks within software development workflows, which shows understanding of the fundamental concept. However, you did not mention that each workflow consists of jobs executed in parallel unless dependencies are specified, and that each job runs in a fresh virtual machine. Including this detail would demonstrate a deeper understanding of how GitHub Actions operates.
+
+
+======================================================================
+
+Question 5: Git-24
+----------------------------------------------------------------------
+Calculated Score: 2.10/3.0
+Original Grade: 2.50/3.0
+Difference: -0.40
+Breakdown: Core: 1/1 (100% → 70%) + Important: 0/2 (0% → 0%) = 70% of 3.0 = 2.1 [70% Core + 30% Important]
+
+CORE Elements:
+  [✓ OK] The essential command to clone a GitHub repository is `git clone <repository-url>`. This command creates a local copy of the repository on your machine, allowing you to work on the code offline.
+       You correctly identified the essential command 'git clone' and explained its effect of creating a local copy of the repository for offline work. This shows a clear understanding of the fundamental concept required.
+
+Important Details:
+  [✗ MISSING] The `<repository-url>` is the URL of the GitHub repository you want to clone. It can be found on the repository's main page under the 'Code' button.
+       You correctly mention the 'git clone' command and its effect of creating a local copy, which shows understanding of the main idea. However, you did not specify or explain what the '<repository-url>' is or where to find it on GitHub, which is an important detail for cloning a repository. Including that information would make your answer more complete.
+
+  [✗ MISSING] After cloning, the local repository will have a `.git` directory containing all the version history and metadata.
+       You correctly mention the 'git clone' command and its purpose to create a local copy of the repository. However, you did not specify that after cloning, the local repository contains a '.git' directory with all the version history and metadata. Including this detail would show a deeper understanding of what cloning entails.
+
+
+======================================================================
+
+Question 6: Lincense-3
+----------------------------------------------------------------------
+Calculated Score: 2.10/3.0
+Original Grade: 1.50/3.0
+Difference: +0.60
+Breakdown: Core: 1/1 (100% → 70%) + Important: 0/2 (0% → 0%) = 70% of 3.0 = 2.1 [70% Core + 30% Important]
+
+CORE Elements:
+  [✓ OK] Copyleft is a practice, not a legal right, where creators surrender some, but not all, rights under copyright law. It ensures that all derived works inherit the copyleft license, promoting freedom to use, modify, and distribute the work.
+       You correctly explained that copyleft allows use, modification, and distribution of the work, with the important condition that derivative works inherit the same license. This shows a clear understanding of the core concept of copyleft as a practice ensuring freedom while preserving licensing terms.
+
+Important Details:
+  [✗ MISSING] Copyleft can be categorized into strong and weak forms, where strong copyleft requires all derived works to inherit the copyleft license, while weak copyleft allows some derived works not to inherit it.
+       You correctly explained the core concept of copyleft requiring derivative works to be released under the same license, which shows good understanding. However, you did not mention the distinction between strong and weak copyleft, which is an important detail about how copyleft can vary in its requirements for derived works. Including this would make your answer more complete.
+
+  [✗ MISSING] Copyleft can also be full or partial, with full copyleft covering all parts of the work and partial copyleft covering only some parts.
+       You correctly explained the main principle of copyleft regarding derivative works and licensing, which shows a good understanding of the core concept. However, you did not mention the important detail that copyleft can be full or partial, covering all or some parts of the work. Including this distinction would provide a more complete answer.
+
+
+======================================================================
+
+Question 7: Python-15
+----------------------------------------------------------------------
+Calculated Score: 2.10/3.0
+Original Grade: 1.50/3.0
+Difference: +0.60
+Breakdown: Core: 1/1 (100% → 70%) + Important: 0/2 (0% → 0%) = 70% of 3.0 = 2.1 [70% Core + 30% Important]
+
+CORE Elements:
+  [✓ OK] In Python, to mark a class attribute as private, you prefix the attribute name with double underscores (`__`). For example, `self.__attribute_name`.
+       You correctly explain that prefixing the attribute name with double underscores marks it as private by triggering name mangling, which shows you understand the main idea of how to make a class attribute private in Python. Well done.
+
+Important Details:
+  [✗ MISSING] Private attributes are not accessible from outside the class, not even from derived classes.
+       You correctly mention that prefixing an attribute with double underscores triggers name mangling, which makes it harder to access from outside the class. However, the important detail that private attributes are not accessible even from derived classes is missing. Including this would show a fuller understanding of Python's private attribute behavior.
+
+  [✗ MISSING] Private attributes are inherited but not accessible from derived classes.
+       You correctly explained that prefixing an attribute with double underscores triggers name mangling, making it harder to access from outside the class. However, you did not mention that private attributes are inherited but not accessible from derived classes, which is an important detail about their behavior in inheritance.
+
+
+======================================================================
+
+Question 8: Testing-12
+----------------------------------------------------------------------
+Calculated Score: 2.10/3.0
+Original Grade: 1.50/3.0
+Difference: +0.60
+Breakdown: Core: 1/1 (100% → 70%) + Important: 0/2 (0% → 0%) = 70% of 3.0 = 2.1 [70% Core + 30% Important]
+
+CORE Elements:
+  [✓ OK] A regression in software testing refers to a situation where a previously functioning feature or functionality becomes compromised or broken after changes such as updates, bug fixes, or new feature additions.
+       You correctly identified that a regression involves a feature that was previously working but is now compromised. This shows you understand the fundamental concept of regression in software testing, even though the explanation is brief.
+
+Important Details:
+  [✗ MISSING] Regressions often occur when a fix for one issue inadvertently causes another issue elsewhere in the software.
+       You correctly identify that a regression involves a feature that was previously working but is now compromised, which shows understanding of the main idea. However, you did not mention that regressions often occur when a fix for one issue inadvertently causes another issue elsewhere in the software. Including this detail would demonstrate a deeper understanding of the concept.
+
+  [✗ MISSING] To prevent regressions, it is crucial to implement a robust testing strategy that includes creating test cases before applying fixes and ensuring all tests pass after changes.
+       You correctly identified that a regression involves a previously working feature becoming compromised, which shows understanding of the core concept. However, you did not mention the important detail about preventing regressions through a robust testing strategy, including creating test cases before fixes and ensuring all tests pass after changes. Including this would demonstrate a deeper understanding of how to manage regressions effectively.
+
+
+======================================================================
+
+Question 9: Versioning-27
+----------------------------------------------------------------------
+Status: no_response
+
+======================================================================

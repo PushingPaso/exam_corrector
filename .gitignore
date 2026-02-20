@@ -13,7 +13,6 @@ slides-rag.db
 build/
 develop-eggs/
 dist/
-evaluations/
 downloads/
 eggs/
 .eggs/

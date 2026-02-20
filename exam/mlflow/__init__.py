@@ -10,7 +10,6 @@ def calculate_overhead(run, total_time):
     client = mlflow.MlflowClient()
     run_info = run.info
     total_duration_ms = total_time * 1000
-
     # Recupera tutte le trace per questa run
     traces = client.search_traces(
         locations=[run_info.experiment_id],
@@ -18,15 +17,25 @@ def calculate_overhead(run, total_time):
     )
 
     tool_intervals = []
+    total_prompt = 0
+    total_completion = 0
     if traces:
         for trace in traces:
+            usage = trace.info.token_usage
+            if usage:
+                # Se usage non è None, sommiamo i valori
+                p = usage.get("input_tokens", 0)
+                c = usage.get("output_token" , 0)
+
+                total_prompt += p
+                total_completion += c
+
             for span in trace.data.spans:
                 if span.span_type == SpanType.TOOL:
                     tool_intervals.append((span.start_time_ns, span.end_time_ns))
 
     merged_duration_ns = 0
     if tool_intervals:
-        # Ordina per tempo di inizio
         tool_intervals.sort(key=lambda x: x[0])
 
         merged = []
@@ -48,7 +57,15 @@ def calculate_overhead(run, total_time):
     tool_duration_ms = merged_duration_ns / 1_000_000
     overhead_ms = total_duration_ms - tool_duration_ms
 
-    print("TIME ANALYSIS (PARALLEL CORRECTED)")
+
+    overhead_ms = overhead_ms / 1_000_000
+    print("TOKEN")
+    print(f"Traces analyzed:         {len(traces)}")
+    print("-" * 30)
+    print(f"Total Prompt Tokens:     {total_prompt}")
+    print(f"Total Completion Tokens: {total_completion}")
+
+    print("TOOL EXECUTION TIME ANALYSIS")
     print(f"Total Duration:       {total_duration_ms / 1000:.2f}s")
     print(f"Active Tool Time:     {tool_duration_ms / 1000:.2f}s")
     print(f"Overhead Time:        {overhead_ms / 1000:.2f}s")

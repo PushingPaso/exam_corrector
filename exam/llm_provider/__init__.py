@@ -30,8 +30,8 @@ def llm_client(model_name: str = None, model_provider: str = "groq", structured_
     Creates an LLM client configured for Groq.
     
     Args:
-        model_name: llama-3.3-70b
-        model_provider: Groq
+        model_name: gpt-4.1-mini
+        model_provider: OpenAI
     
     Returns:
         Tuple of (llm_instance, model_name, model_provider)

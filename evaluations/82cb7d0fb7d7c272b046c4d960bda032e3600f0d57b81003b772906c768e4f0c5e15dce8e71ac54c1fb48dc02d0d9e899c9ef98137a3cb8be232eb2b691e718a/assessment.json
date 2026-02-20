@@ -1,0 +1,95 @@
+{
+  "student_email": "82cb7d0fb7d7c272b046c4d960bda032e3600f0d57b81003b772906c768e4f0c5e15dce8e71ac54c1fb48dc02d0d9e899c9ef98137a3cb8be232eb2b691e718a",
+  "calculated_score": 0.0,
+  "max_score": 27.0,
+  "percentage": 0.0,
+  "scoring_system": "70% Core + 30% Important_Details",
+  "assessments": [
+    {
+      "question_number": 1,
+      "question_id": "Definition-33",
+      "question_text": "What is the difference between compiled and ...",
+      "status": "no_response",
+      "score": 0.0,
+      "max_score": 3.0
+    },
+    {
+      "question_number": 2,
+      "question_id": "Modelling-2",
+      "question_text": "How can software be modelled?",
+      "status": "no_response",
+      "score": 0.0,
+      "max_score": 3.0
+    },
+    {
+      "question_number": 3,
+      "question_id": "DistributedSystems-30",
+      "question_text": "In the context of distributed systems, how ...",
+      "status": "no_response",
+      "score": 0.0,
+      "max_score": 3.0
+    },
+    {
+      "question_number": 4,
+      "question_id": "GHA-1",
+      "question_text": "What is GitHub Actions?",
+      "status": "no_response",
+      "score": 0.0,
+      "max_score": 3.0
+    },
+    {
+      "question_number": 5,
+      "question_id": "Git-24",
+      "question_text": "Let's say you have access to a GitHub ...",
+      "status": "no_response",
+      "score": 0.0,
+      "max_score": 3.0
+    },
+    {
+      "question_number": 6,
+      "question_id": "Lincense-3",
+      "question_text": "In the context of software licensing, what is ...",
+      "status": "no_response",
+      "score": 0.0,
+      "max_score": 3.0
+    },
+    {
+      "question_number": 7,
+      "question_id": "Python-15",
+      "question_text": "In Python, how would you mark a class attribute...",
+      "status": "no_response",
+      "score": 0.0,
+      "max_score": 3.0
+    },
+    {
+      "question_number": 8,
+      "question_id": "Testing-12",
+      "question_text": "In the context of software testing, what is a ...",
+      "status": "no_response",
+      "score": 0.0,
+      "max_score": 3.0
+    },
+    {
+      "question_number": 9,
+      "question_id": "Versioning-27",
+      "question_text": "Suppose that, in your Python project, you add ...",
+      "status": "no_response",
+      "score": 0.0,
+      "max_score": 3.0
+    }
+  ],
+  "original_grades": {
+    "total_grade": 0.0,
+    "question_grades": {
+      "1": 0.0,
+      "2": 0.0,
+      "3": 0.0,
+      "4": 0.0,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "9": 0.0
+    }
+  }
+}
