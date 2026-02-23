@@ -54,8 +54,7 @@ def llm_client(model_name: str = None, model_provider: str = "groq", structured_
     if model_name and model_name in model_configs:
         model_name = model_configs[model_name]
     elif not model_name:
-        #model_name = "gpt-4o"
-        model_name ="gpt-4.1-mini"
+        model_name = "gpt-4o"
 
     # For compatibility
     if not model_provider:
@@ -72,7 +71,7 @@ def llm_client(model_name: str = None, model_provider: str = "groq", structured_
     # Create ChatGroq instance
     model = ChatOpenAI(
         model = model_name,
-        temperature=0.1,
+        temperature=0.0,
         #rate_limiter = rate_limiter
     )
 
